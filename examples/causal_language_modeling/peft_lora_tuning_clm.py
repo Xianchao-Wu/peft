@@ -15,9 +15,15 @@ from transformers import default_data_collator, get_linear_schedule_with_warmup
 from tqdm import tqdm
 #from datasets import load_dataset
 
-device = "cuda"
-model_name_or_path = "bigscience/bloomz-560m"
-tokenizer_name_or_path = "bigscience/bloomz-560m"
+cache_dir=os.getcwd()
+
+device = "cuda:0"
+#model_name_or_path = "bigscience/bloomz-560m" # NOTE change model size if required
+#tokenizer_name_or_path = "bigscience/bloomz-560m"
+
+model_name_or_path = "bigscience/bloomz-7b1"
+tokenizer_name_or_path = "bigscience/bloomz-7b1"
+
 #peft_config = PrefixTuningConfig(task_type=TaskType.CAUSAL_LM, num_virtual_tokens=30) # PrefixTuningConfig(peft_type=<PeftType.PREFIX_TUNING: 'PREFIX_TUNING'>, base_model_name_or_path=None, task_type=<TaskType.CAUSAL_LM: 'CAUSAL_LM'>, inference_mode=False, num_virtual_tokens=30, token_dim=None, num_transformer_submodules=None, num_attention_heads=None, num_layers=None, encoder_hidden_size=None, prefix_projection=False)
 
 dataset_name = "twitter_complaints"
@@ -28,7 +34,7 @@ text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
 lr = 3e-2
-num_epochs = 100 # NOTE TODO, change this to 50 for the real peft
+num_epochs = 500 # NOTE TODO, change this to 50 for the real peft
 batch_size = 8
 
 
@@ -39,7 +45,8 @@ batch_size = 8
 
 dataset = load_dataset("ought/raft", dataset_name)
 
-classes = [k.replace("_", " ") for k in dataset["train"].features["Label"].names] # ['Unlabeled', 'complaint', 'no complaint']
+classes = [k.replace("_", " ") for k in dataset["train"].features["Label"].names] 
+# ['Unlabeled', 'complaint', 'no complaint']
 print(classes)
 dataset = dataset.map(
     lambda x: {"text_label": [classes[label] for label in x["Label"]]},
@@ -47,17 +54,21 @@ dataset = dataset.map(
     num_proc=1,
 )
 print(dataset)
-print(dataset["train"][0]) # {'Tweet text': '@HMRCcustomers No this is my first job', 'ID': 0, 'Label': 2, 'text_label': 'no complaint'}
+print(dataset["train"][0]) 
+# {'Tweet text': '@HMRCcustomers No this is my first job', 'ID': 0, 'Label': 2, 'text_label': 'no complaint'}
 
 
 # In[4]:
 
 
 # data preprocessing
-tokenizer = AutoTokenizer.from_pretrained(model_name_or_path) # BloomTokenizerFast(name_or_path='bigscience/bloomz-560m', vocab_size=250680, model_max_length=1000000000000000019884624838656, is_fast=True, padding_side='left', truncation_side='right', special_tokens={'bos_token': '<s>', 'eos_token': '</s>', 'unk_token': '<unk>', 'pad_token': '<pad>'}, clean_up_tokenization_spaces=False)
+tokenizer = AutoTokenizer.from_pretrained(model_name_or_path,
+        cache_dir=cache_dir) 
+# BloomTokenizerFast(name_or_path='bigscience/bloomz-560m', vocab_size=250680, model_max_length=1000000000000000019884624838656, is_fast=True, padding_side='left', truncation_side='right', special_tokens={'bos_token': '<s>', 'eos_token': '</s>', 'unk_token': '<unk>', 'pad_token': '<pad>'}, clean_up_tokenization_spaces=False)
 if tokenizer.pad_token_id is None:
     tokenizer.pad_token_id = tokenizer.eos_token_id
-target_max_length = max([len(tokenizer(class_label)["input_ids"]) for class_label in classes]) # 3 after tokenization NOTE
+target_max_length = max([len(tokenizer(class_label)["input_ids"]) for class_label in classes]) 
+# 3 after tokenization NOTE
 print(target_max_length)
 
 
@@ -178,7 +189,8 @@ import ipdb; ipdb.set_trace()
 
 # creating model, NOTE
 
-model = AutoModelForCausalLM.from_pretrained(model_name_or_path) # 559,214,592
+model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
+        cache_dir=cache_dir) # 559,214,592
 
 from peft import LoraConfig, get_peft_model
 
@@ -232,7 +244,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 # training and evaluation
 model = model.to(device)
 
-is_train = False
+is_train = False #True # False NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
@@ -275,12 +287,11 @@ if is_train:
 
     import ipdb; ipdb.set_trace()
     # saving model
-    peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}"
+    peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
     model.save_pretrained(peft_model_id)
     ckpt = f"{peft_model_id}/adapter_model.bin"
     #get_ipython().system('du -h $ckpt')
     os.system('du -h {}'.format(ckpt))
-
 
 # In[36]:
 
@@ -315,10 +326,11 @@ if is_train:
 from peft import PeftModel, PeftConfig
 
 import ipdb; ipdb.set_trace()
-peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}"
+peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
 config = PeftConfig.from_pretrained(peft_model_id)
-model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
+model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path,
+        cache_dir=cache_dir)
 model = PeftModel.from_pretrained(model, peft_model_id)
 
 import ipdb; ipdb.set_trace()
@@ -331,20 +343,54 @@ print('-'*30)
 model.to(device)
 model.eval()
 
-with torch.no_grad():
-    for i in range(len(dataset['test'])):
-        inputs = tokenizer(f'{text_column} : {dataset["test"][i]["Tweet text"]} Label : ', 
-                return_tensors="pt")
-        print(dataset["test"][i]["Tweet text"])
-        print(inputs)
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        outputs = model.generate(
-            input_ids=inputs["input_ids"], 
-            attention_mask=inputs["attention_mask"], 
-            max_new_tokens=10, 
-            eos_token_id=3
-        )
-        print(outputs)
-        print(tokenizer.batch_decode(outputs.detach().cpu().numpy(), 
-            skip_special_tokens=True))
+if is_train:
+    with torch.no_grad():
+        for i in range(len(dataset['test'])):
+            inputs = tokenizer(f'{text_column} : {dataset["test"][i]["Tweet text"]} Label : ', 
+                    return_tensors="pt")
+            print(dataset["test"][i]["Tweet text"])
+            print(inputs)
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            outputs = model.generate(
+                input_ids=inputs["input_ids"], 
+                attention_mask=inputs["attention_mask"], 
+                max_new_tokens=10, 
+                eos_token_id=3
+            )
+            print(outputs)
+            print(tokenizer.batch_decode(outputs.detach().cpu().numpy(), 
+                skip_special_tokens=True))
+
+eval_preds = []
+
+for _, batch in enumerate(tqdm(eval_dataloader)):
+    batch = {k:v.to(device) for k, v in batch.items() if k != 'labels'}
+    with torch.no_grad():
+        outputs = model.generate(**batch, max_new_tokens=10, eos_token_id=3)
+    #preds = outputs[:, max_length:].detach().cpu().numpy()
+    preds = outputs.detach().cpu().numpy()
+    import ipdb; ipdb.set_trace()
+    temp = tokenizer.batch_decode(preds, skip_special_tokens=True)
+    temp = [atemp.split('Label : ')[-1] for atemp in temp]
+    temp2 = []
+    for atemp in temp:
+        if atemp.startswith('complaint'):
+            temp2.append('complaint')
+        elif atemp.startswith('no complaint'):
+            temp2.append('no complaint')
+        else:
+            temp2.append(atemp)
+    eval_preds.extend(temp2)
+
+correct = 0
+total = 0
+for pred, true in zip(eval_preds, dataset['train'][label_column]):
+    if pred.strip() == true.strip():
+        correct += 1
+    total += 1
+
+accuracy = correct / float(total) * 100.0
+print(f'{accuracy=}')
+print(f'{eval_preds=}')
+print(f"{dataset['train'][label_column]=}")
 

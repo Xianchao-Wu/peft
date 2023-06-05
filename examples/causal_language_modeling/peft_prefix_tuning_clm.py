@@ -15,15 +15,15 @@ from transformers import default_data_collator, get_linear_schedule_with_warmup
 from tqdm import tqdm
 #from datasets import load_dataset
 
-device = "cuda"
+device = "cuda:1"
 model_name_or_path = "bigscience/bloomz-560m"
 tokenizer_name_or_path = "bigscience/bloomz-560m"
 peft_config = PrefixTuningConfig(task_type=TaskType.CAUSAL_LM, num_virtual_tokens=30) # PrefixTuningConfig(peft_type=<PeftType.PREFIX_TUNING: 'PREFIX_TUNING'>, base_model_name_or_path=None, task_type=<TaskType.CAUSAL_LM: 'CAUSAL_LM'>, inference_mode=False, num_virtual_tokens=30, token_dim=None, num_transformer_submodules=None, num_attention_heads=None, num_layers=None, encoder_hidden_size=None, prefix_projection=False)
 
 dataset_name = "twitter_complaints"
-checkpoint_name = f"{dataset_name}_{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_v1.pt".replace(
-    "/", "_"
-) # 'twitter_complaints_bigscience_bloomz-560m_PREFIX_TUNING_CAUSAL_LM_v1.pt' NOTE
+#checkpoint_name = f"{dataset_name}_{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_v1.pt".replace(
+#    "/", "_"
+#) # 'twitter_complaints_bigscience_bloomz-560m_PREFIX_TUNING_CAUSAL_LM_v1.pt' NOTE
 text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
@@ -106,9 +106,16 @@ eval_dataset = processed_datasets["train"]
 
 
 train_dataloader = DataLoader(
-    train_dataset, shuffle=True, collate_fn=default_data_collator, batch_size=batch_size, pin_memory=True
+    train_dataset, 
+    shuffle=True, 
+    collate_fn=default_data_collator, 
+    batch_size=batch_size, 
+    pin_memory=True
 )
-eval_dataloader = DataLoader(eval_dataset, collate_fn=default_data_collator, batch_size=batch_size, pin_memory=True)
+eval_dataloader = DataLoader(eval_dataset, 
+        collate_fn=default_data_collator, 
+        batch_size=batch_size, 
+        pin_memory=True)
 
 
 # In[ ]:
@@ -141,7 +148,8 @@ test_dataset = dataset["test"].map(
     desc="Running tokenizer on dataset",
 )
 
-test_dataloader = DataLoader(test_dataset, collate_fn=default_data_collator, batch_size=batch_size, pin_memory=True)
+test_dataloader = DataLoader(test_dataset, 
+        collate_fn=default_data_collator, batch_size=batch_size, pin_memory=True)
 print(next(iter(test_dataloader)))
 
 
@@ -207,47 +215,56 @@ lr_scheduler = get_linear_schedule_with_warmup(
 
 # training and evaluation
 model = model.to(device)
+peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
-for epoch in range(num_epochs):
-    model.train()
-    total_loss = 0
-    for step, batch in enumerate(tqdm(train_dataloader)):
-        batch = {k: v.to(device) for k, v in batch.items()} # dict_keys(['input_ids', 'attention_mask', 'labels']), batch.size=8; batch['input_ids'].shape=[8, 64]; batch['attention_mask']=[8, 64], batch['labels']=[8, 64] NOTE 
-        #         print(batch)
-        #         print(batch["input_ids"].shape)
-        outputs = model(**batch) # TODO forward, need to check the forward algorithm details... NOTE
-        loss = outputs.loss
-        total_loss += loss.detach().float()
-        loss.backward()
-        optimizer.step()
-        lr_scheduler.step()
-        optimizer.zero_grad()
+is_train = False # NOTE
+if is_train:
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0
+        for step, batch in enumerate(tqdm(train_dataloader)):
+            batch = {k: v.to(device) for k, v in batch.items()} # dict_keys(['input_ids', 'attention_mask', 'labels']), batch.size=8; batch['input_ids'].shape=[8, 64]; batch['attention_mask']=[8, 64], batch['labels']=[8, 64] NOTE 
+            #         print(batch)
+            #         print(batch["input_ids"].shape)
+            outputs = model(**batch) # TODO forward, need to check the forward algorithm details... NOTE
+            loss = outputs.loss
+            total_loss += loss.detach().float()
+            loss.backward()
+            optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad()
 
-    model.eval()
-    eval_loss = 0
-    eval_preds = []
-    for step, batch in enumerate(tqdm(eval_dataloader)):
-        batch = {k: v.to(device) for k, v in batch.items()}
-        with torch.no_grad():
-            outputs = model(**batch)
-        loss = outputs.loss
-        eval_loss += loss.detach().float()
-        eval_preds.extend(
-            tokenizer.batch_decode(torch.argmax(outputs.logits, -1).detach().cpu().numpy(), skip_special_tokens=True)
-        )
+        model.eval()
+        eval_loss = 0
+        eval_preds = []
+        for step, batch in enumerate(tqdm(eval_dataloader)):
+            batch = {k: v.to(device) for k, v in batch.items()}
+            with torch.no_grad():
+                outputs = model(**batch)
+            loss = outputs.loss
+            eval_loss += loss.detach().float()
+            eval_preds.extend(
+                tokenizer.batch_decode(torch.argmax(outputs.logits, -1).detach().cpu().numpy(), 
+                    skip_special_tokens=True)
+            )
 
-    eval_epoch_loss = eval_loss / len(eval_dataloader)
-    eval_ppl = torch.exp(eval_epoch_loss)
-    train_epoch_loss = total_loss / len(train_dataloader)
-    train_ppl = torch.exp(train_epoch_loss)
-    print(f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}")
+        eval_epoch_loss = eval_loss / len(eval_dataloader)
+        eval_ppl = torch.exp(eval_epoch_loss)
+        train_epoch_loss = total_loss / len(train_dataloader)
+        train_ppl = torch.exp(train_epoch_loss)
+        print(f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}")
 
+    import ipdb; ipdb.set_trace()
+    # saving model
+    model.save_pretrained(peft_model_id)
+    print('model saved to {}'.format(peft_model_id))
+    print('-'*30)
 
 # In[36]:
 
 import ipdb; ipdb.set_trace()
 model.eval()
-i = 16
+i = 4
 inputs = tokenizer(f'{text_column} : {dataset["test"][i]["Tweet text"]} Label : ', return_tensors="pt")
 print(dataset["test"][i]["Tweet text"])
 print(inputs)
@@ -255,22 +272,17 @@ print(inputs)
 with torch.no_grad():
     inputs = {k: v.to(device) for k, v in inputs.items()} # k='input_ids' in cpu, v=tensor in gpu, 这个有意思
     outputs = model.generate(
-        input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], max_new_tokens=10, eos_token_id=3
+        input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], 
+        max_new_tokens=10, eos_token_id=3
     ) # NOTE
     print(outputs)
+    print('[before loading ckpt] prediction=')
     print(tokenizer.batch_decode(outputs.detach().cpu().numpy(), skip_special_tokens=True))
 
 
 # In[16]:
 
-import ipdb; ipdb.set_trace()
-# saving model
-peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}"
-model.save_pretrained(peft_model_id)
-
-
 # In[ ]:
-
 
 ckpt = f"{peft_model_id}/adapter_model.bin"
 #get_ipython().system('du -h $ckpt')
@@ -282,7 +294,7 @@ os.system('du -h {}'.format(ckpt))
 
 from peft import PeftModel, PeftConfig
 
-peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}"
+#peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
 config = PeftConfig.from_pretrained(peft_model_id)
 model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
@@ -302,26 +314,38 @@ print(inputs)
 with torch.no_grad():
     inputs = {k: v.to(device) for k, v in inputs.items()}
     outputs = model.generate(
-        input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], max_new_tokens=10, eos_token_id=3
+        input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], max_new_tokens=10, 
+        eos_token_id=3
     )
     print(outputs)
+    print('[after loading ckpt] prediction=')
     print(tokenizer.batch_decode(outputs.detach().cpu().numpy(), skip_special_tokens=True))
 
 
-# In[ ]:
+
+eval_preds = []
+
+for _, batch in enumerate(tqdm(eval_dataloader)):
+    batch = {k:v.to(device) for k, v in batch.items() if k != 'labels'}
+    with torch.no_grad():
+        outputs = model.generate(**batch, max_new_tokens=10, eos_token_id=3)
+    #preds = outputs[:, max_length:].detach().cpu().numpy()
+    preds = outputs.detach().cpu().numpy()
+    #import ipdb; ipdb.set_trace()
+    temp = tokenizer.batch_decode(preds, skip_special_tokens=True)
+    temp = [atemp.split('Label : ')[-1] for atemp in temp]
+    eval_preds.extend(temp)
 
 
+correct = 0
+total = 0
+for pred, true in zip(eval_preds, dataset['train'][label_column]):
+    if pred.strip() == true.strip():
+        correct += 1
+    total += 1
 
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
+accuracy = correct / float(total) * 100.0
+print(f'{accuracy=}')
+print(f'{eval_preds=}')
+print(f"{dataset['train'][label_column]=}")
 

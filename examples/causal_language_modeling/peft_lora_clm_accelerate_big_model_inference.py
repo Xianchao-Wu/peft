@@ -34,7 +34,8 @@ cache_dir=os.getcwd() # '/workspace/asr/peft/examples/causal_language_modeling'
 
 #from datasets import load_dataset
 
-dataset = load_dataset("ought/raft", dataset_name) # The Real-world Annotated Few-shot Tasks (RAFT) dataset is an aggregation of English-language datasets found in the real world. Associated with each dataset is a binary or multiclass classification task, intended to improve our understanding of how language models perform on tasks that have concrete, real-world value. Only 50 labeled examples are provided in each dataset.
+dataset = load_dataset("ought/raft", dataset_name) 
+# The Real-world Annotated Few-shot Tasks (RAFT) dataset is an aggregation of English-language datasets found in the real world. Associated with each dataset is a binary or multiclass classification task, intended to improve our understanding of how language models perform on tasks that have concrete, real-world value. Only 50 labeled examples are provided in each dataset.
 
 classes = [k.replace("_", " ") for k in dataset["train"].features["Label"].names]
 print(classes)
@@ -44,23 +45,28 @@ dataset = dataset.map(
     num_proc=1,
 )
 print(dataset)
-print(dataset["train"][0]) # {'Tweet text': '@HMRCcustomers No this is my first job', 'ID': 0, 'Label': 2, 'text_label': 'no complaint'}
+print(dataset["train"][0]) 
+# {'Tweet text': '@HMRCcustomers No this is my first job', 'ID': 0, 'Label': 2, 'text_label': 'no complaint'}
 
 
 # In[3]:
 
 
 # data preprocessing
-tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=cache_dir) # BloomTokenizerFast(name_or_path='bigscience/bloomz-7b1', vocab_size=250680, model_max_length=1000000000000000019884624838656, is_fast=True, padding_side='left', truncation_side='right', special_tokens={'bos_token': '<s>', 'eos_token': '</s>', 'unk_token': '<unk>', 'pad_token': '<pad>'}, clean_up_tokenization_spaces=False), NOTE 25万个词条
+tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=cache_dir) 
+# BloomTokenizerFast(name_or_path='bigscience/bloomz-7b1', vocab_size=250680, model_max_length=1000000000000000019884624838656, is_fast=True, padding_side='left', truncation_side='right', special_tokens={'bos_token': '<s>', 'eos_token': '</s>', 'unk_token': '<unk>', 'pad_token': '<pad>'}, clean_up_tokenization_spaces=False), NOTE 25万个词条
 if tokenizer.pad_token_id is None:
     tokenizer.pad_token_id = tokenizer.eos_token_id
 target_max_length = max([len(tokenizer(class_label)["input_ids"]) for class_label in classes])
-print(target_max_length) # ['Unlabeled', 'complaint', 'no complaint'], 经过tokenizer之后的序列的长度，最长为3
+print(target_max_length) 
+# ['Unlabeled', 'complaint', 'no complaint'], 经过tokenizer之后的序列的长度，最长为3
 
 
 def preprocess_function(examples):
     batch_size = len(examples[text_column]) # 50
-    inputs = [f"{text_column} : {x} Label : " for x in examples[text_column]] # 'Tweet text : @HMRCcustomers No this is my first job Label : ' = inputs[0]
+    inputs = [f"{text_column} : {x} Label : " for x in examples[text_column]] 
+    # 'Tweet text : @HMRCcustomers No this is my first job Label : ' = inputs[0]
+
     targets = [str(x) for x in examples[label_column]] # 'no complaint' = targets[0]
     model_inputs = tokenizer(inputs)
     '''ipdb> len(model_inputs['input_ids'])
@@ -80,26 +86,43 @@ def preprocess_function(examples):
     [1, 1]
     '''
     for i in range(batch_size):
-        sample_input_ids = model_inputs["input_ids"][i] # [227985, 5484, 915, 2566, 169403, 15296, 36272, 525, 3928, 1119, 632, 2670, 3968, 15270, 77658, 915, 210] -> 17个token ids
+        sample_input_ids = model_inputs["input_ids"][i] 
+        # [227985, 5484, 915, 2566, 169403, 15296, 36272, 525, 3928, 1119, 
+        #  632, 2670, 3968, 15270, 77658, 915, 210] -> 17个token ids
         label_input_ids = labels["input_ids"][i] + [tokenizer.pad_token_id] # [1936, 106863, 3] -> 3个token ids
         # print(i, sample_input_ids, label_input_ids)
-        model_inputs["input_ids"][i] = sample_input_ids + label_input_ids # [227985, 5484, 915, 2566, 169403, 15296, 36272, 525, 3928, 1119, 632, 2670, 3968, 15270, 77658, 915, 210,  ||| NOTE ||| 1936, 106863, 3]
-        labels["input_ids"][i] = [-100] * len(sample_input_ids) + label_input_ids # [-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, 1936, 106863, 3] # NOTE 需要注意的是，前面都是-100! 占据位置的而已, 20个位置！之后是1936, 106863, 3 这个标签
+        model_inputs["input_ids"][i] = sample_input_ids + label_input_ids 
+        # [227985, 5484, 915, 2566, 169403, 15296, 36272, 525, 3928, 1119, 632, 
+        #  2670, 3968, 15270, 77658, 915, 210,  ||| NOTE ||| 1936, 106863, 3]
+        labels["input_ids"][i] = [-100] * len(sample_input_ids) + label_input_ids 
+        # [-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, 
+        #  -100, -100, -100, -100, -100, 1936, 106863, 3] 
+        # NOTE 需要注意的是，前面都是-100! 占据位置的而已, 20个位置！之后是1936, 106863, 3 这个标签
         model_inputs["attention_mask"][i] = [1] * len(model_inputs["input_ids"][i])
         # ipdb> model_inputs['attention_mask'][0]
         # len=20 [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 
     # print(model_inputs)
     for i in range(batch_size):
-        sample_input_ids = model_inputs["input_ids"][i] # [227985, 5484, 915, 2566, 169403, 15296, 36272, 525, 3928, 1119, 632, 2670, 3968, 15270, 77658, 915, 210, ||| NOTE ||| 1936, 106863, 3]
-        label_input_ids = labels["input_ids"][i] # [-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, 1936, 106863, 3]
+        sample_input_ids = model_inputs["input_ids"][i] 
+        # [227985, 5484, 915, 2566, 169403, 15296, 36272, 525, 3928, 1119, 632, 
+        #  2670, 3968, 15270, 77658, 915, 210, ||| NOTE ||| 1936, 106863, 3]
+        label_input_ids = labels["input_ids"][i] 
+        # [-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, 
+        #  -100, -100, -100, -100, -100, -100, 1936, 106863, 3]
         model_inputs["input_ids"][i] = [tokenizer.pad_token_id] * (
             max_length - len(sample_input_ids) # max_length=64
-        ) + sample_input_ids # [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 227985, 5484, 915, 2566, 169403, 15296, 36272, 525, 3928, 1119, 632, 2670, 3968, 15270, 77658, 915, 210, 1936, 106863, 3]
+        ) + sample_input_ids 
+        # [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 
+        # 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 
+        # 227985, 5484, 915, 2566, 169403, 15296, 36272, 525, 3928, 1119, 632, 
+        # 2670, 3968, 15270, 77658, 915, 210, 1936, 106863, 3]
         model_inputs["attention_mask"][i] = [0] * (max_length - len(sample_input_ids)) + model_inputs[
             "attention_mask"
         ][i] # ipdb> model_inputs['attention_mask'][0]
-        #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+        # 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 
+        # 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
         #ipdb> len(model_inputs['attention_mask'][0])
         #64
 
@@ -183,7 +206,9 @@ import ipdb; ipdb.set_trace()
 
 def test_preprocess_function(examples):
     batch_size = len(examples[text_column])
-    inputs = [f"{text_column} : {x} Label : " for x in examples[text_column]] # len(inputs)=50, inputs[0]='Tweet text : @HMRCcustomers No this is my first job Label : '
+    inputs = [f"{text_column} : {x} Label : " for x in examples[text_column]] 
+    # len(inputs)=50, inputs[0]='Tweet text : @HMRCcustomers No this is my first job Label : '
+
     model_inputs = tokenizer(inputs)
     # print(model_inputs)
     for i in range(batch_size):
@@ -259,9 +284,16 @@ import ipdb; ipdb.set_trace()
 #from peft import PeftModel, PeftConfig
 
 #max_memory = {0: "1GIB", 1: "1GIB", 2: "2GIB", 3: "10GIB", "cpu": "30GB"}
-peft_model_id = "smangrul/twitter_complaints_bigscience_bloomz-7b1_LORA_CAUSAL_LM"
+#peft_model_id = "smangrul/twitter_complaints_bigscience_bloomz-7b1_LORA_CAUSAL_LM" # NOTE
 
-config = PeftConfig.from_pretrained(peft_model_id) #, cache_dir=cache_dir), PeftConfig(peft_type='LORA', base_model_name_or_path='bigscience/bloomz-7b1', task_type='CAUSAL_LM', inference_mode=True)
+peft_type = "LORA"
+task_type = "CAUSAL_LM"
+
+peft_model_id = f"{model_name_or_path}_{peft_type}_{task_type}"
+
+config = PeftConfig.from_pretrained(peft_model_id) 
+#, cache_dir=cache_dir), PeftConfig(peft_type='LORA', 
+# base_model_name_or_path='bigscience/bloomz-7b1', task_type='CAUSAL_LM', inference_mode=True)
 
 model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path, 
         device_map="auto", 
@@ -287,16 +319,16 @@ import ipdb; ipdb.set_trace()
 
 from peft import LoraConfig, get_peft_model
 
-config_restart = LoraConfig(
-        r=8,
-        lora_alpha=32,
-        target_modules=['query_key_value'],
-        lora_dropout=0.05,
-        bias='none',
-        task_type='CAUSAL_LM'
-        )
-
-model_restart = get_peft_model(model, config_restart)
+if False:
+    config_restart = LoraConfig(
+            r=8,
+            lora_alpha=32,
+            target_modules=['query_key_value'],
+            lora_dropout=0.05,
+            bias='none',
+            task_type='CAUSAL_LM'
+            )
+    model_restart = get_peft_model(model, config_restart)
 
 import ipdb; ipdb.set_trace()
 
@@ -338,7 +370,6 @@ model = PeftModel.from_pretrained(model, # TODO, 这个出错了，上面的mode
 # TODO bug:
 #         size mismatch for base_model.model.transformer.h.29.self_attention.query_key_value.lora_B.default.weight: copying a param with shape torch.Size([8192, 8, 1]) from checkpoint, the shape in current model is torch.Size([12288, 8]).
 
-
 # In[35]:
 
 print(model)
@@ -347,9 +378,8 @@ print(model)
 
 print(model.hf_device_map)
 
-
+import ipdb; ipdb.set_trace()
 # In[34]:
-
 
 model.eval()
 i = 89
@@ -411,9 +441,5 @@ for _, batch in enumerate(tqdm(test_dataloader)):
 
 print(test_preds)
 
-
 # In[ ]:
-
-
-
 
