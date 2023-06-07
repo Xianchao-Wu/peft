@@ -15,6 +15,8 @@ from transformers import default_data_collator, get_linear_schedule_with_warmup
 from tqdm import tqdm
 #from datasets import load_dataset
 
+cache_dir=os.getcwd()
+
 device = "cuda:1"
 model_name_or_path = "bigscience/bloomz-560m"
 tokenizer_name_or_path = "bigscience/bloomz-560m"
@@ -28,7 +30,7 @@ text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
 lr = 3e-2
-num_epochs = 100 # NOTE TODO, change this to 50 for the real peft
+num_epochs = 200 # NOTE TODO, change this to 50 for the real peft
 batch_size = 8
 
 
@@ -54,7 +56,7 @@ print(dataset["train"][0]) # {'Tweet text': '@HMRCcustomers No this is my first 
 
 
 # data preprocessing
-tokenizer = AutoTokenizer.from_pretrained(model_name_or_path) # BloomTokenizerFast(name_or_path='bigscience/bloomz-560m', vocab_size=250680, model_max_length=1000000000000000019884624838656, is_fast=True, padding_side='left', truncation_side='right', special_tokens={'bos_token': '<s>', 'eos_token': '</s>', 'unk_token': '<unk>', 'pad_token': '<pad>'}, clean_up_tokenization_spaces=False)
+tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=cache_dir) # BloomTokenizerFast(name_or_path='bigscience/bloomz-560m', vocab_size=250680, model_max_length=1000000000000000019884624838656, is_fast=True, padding_side='left', truncation_side='right', special_tokens={'bos_token': '<s>', 'eos_token': '</s>', 'unk_token': '<unk>', 'pad_token': '<pad>'}, clean_up_tokenization_spaces=False)
 if tokenizer.pad_token_id is None:
     tokenizer.pad_token_id = tokenizer.eos_token_id
 target_max_length = max([len(tokenizer(class_label)["input_ids"]) for class_label in classes]) # 3 after tokenization NOTE
@@ -177,7 +179,7 @@ import ipdb; ipdb.set_trace()
 
 # creating model, NOTE
 
-model = AutoModelForCausalLM.from_pretrained(model_name_or_path) # 559,214,592
+model = AutoModelForCausalLM.from_pretrained(model_name_or_path, cache_dir=cache_dir) # 559,214,592
 model = get_peft_model(model, peft_config) # 560,689,152
 model.print_trainable_parameters()
 
@@ -217,7 +219,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 model = model.to(device)
 peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
-is_train = False # NOTE
+is_train = True # False # NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
@@ -297,7 +299,7 @@ from peft import PeftModel, PeftConfig
 #peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
 config = PeftConfig.from_pretrained(peft_model_id)
-model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
+model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir)
 model = PeftModel.from_pretrained(model, peft_model_id)
 
 
