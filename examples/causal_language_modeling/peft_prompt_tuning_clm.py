@@ -15,6 +15,8 @@ from transformers import default_data_collator, get_linear_schedule_with_warmup
 from tqdm import tqdm
 from datasets import load_dataset
 
+cache_dir=os.getcwd()
+
 device = "cuda:2"
 model_name_or_path = "bigscience/bloomz-560m"
 tokenizer_name_or_path = "bigscience/bloomz-560m"
@@ -34,7 +36,7 @@ text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
 lr = 3e-2
-num_epochs = 500
+num_epochs = 500 #200
 batch_size = 8
 
 
@@ -60,7 +62,7 @@ print(dataset["train"][0])
 
 
 # data preprocessing
-tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=cache_dir)
 if tokenizer.pad_token_id is None:
     tokenizer.pad_token_id = tokenizer.eos_token_id
 target_max_length = max([len(tokenizer(class_label)["input_ids"]) for class_label in classes])
@@ -175,7 +177,7 @@ print(next(iter(test_dataloader)))
 
 import ipdb; ipdb.set_trace()
 # creating model
-model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
+model = AutoModelForCausalLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 # trainable params: 8192 || all params: 559222784 || trainable%: 0.0014648902430985358
@@ -280,7 +282,7 @@ from peft import PeftModel, PeftConfig
 #peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}"
 
 config = PeftConfig.from_pretrained(peft_model_id)
-model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
+model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir)
 model = PeftModel.from_pretrained(model, peft_model_id)
 
 
@@ -317,6 +319,7 @@ for _, batch in enumerate(tqdm(eval_dataloader)):
     temp = tokenizer.batch_decode(preds, skip_special_tokens=True)
     temp = [atemp.split('Label : ')[-1] for atemp in temp]
     temp2 = []
+    print('before processing', temp)
     for atemp in temp:
         if atemp.startswith('no complaint'):
             temp2.append('no complaint')
@@ -326,6 +329,7 @@ for _, batch in enumerate(tqdm(eval_dataloader)):
             temp2.append(atemp)
     eval_preds.extend(temp2)
     print(temp2)
+    print('after processing', temp2)
 
 
 correct = 0

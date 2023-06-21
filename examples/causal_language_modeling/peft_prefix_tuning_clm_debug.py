@@ -179,44 +179,60 @@ import ipdb; ipdb.set_trace()
 
 # creating model, NOTE
 
-model = AutoModelForCausalLM.from_pretrained(model_name_or_path, cache_dir=cache_dir) # 559,214,592
-model.to('cuda:0')
-temp1 = model.transformer.h[0].mlp.dense_4h_to_h.weight[:, :1024]
-temp2 = model.transformer.h[-1].mlp.dense_4h_to_h.weight[:, :1024]
+def svd(model_name_or_path):
+    model = AutoModelForCausalLM.from_pretrained(model_name_or_path, cache_dir=cache_dir) # 559,214,592
+    model.to('cuda:0')
+    temp1 = model.transformer.h[0].mlp.dense_4h_to_h.weight[:, :1024]
+    temp2 = model.transformer.h[-1].mlp.dense_4h_to_h.weight[:, :1024]
 
-u1,s1,v1=torch.svd(temp1)
-u2,s2,v2=torch.svd(temp2)
+    u1,s1,v1=torch.svd(temp1)
+    u2,s2,v2=torch.svd(temp2)
 
-alen=len(model.transformer.h)
+    alen=len(model.transformer.h)
 
-def svd(alen, amatrix, aname):
+    def svd(alen, amatrix, aname):
+        for i in range(alen):
+            ui, si, vi = torch.svd(amatrix)
+            print(aname, i, sum(si).item())
+
     for i in range(alen):
-        ui, si, vi = torch.svd(amatrix)
-        print(aname, i, sum(si).item())
+        tempi = model.transformer.h[i].self_attention.query_key_value.weight
+        ui, si, vi = torch.svd(tempi)
+        print(model_name_or_path, 
+                'self_attention.qkv', 
+                i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
+    print('-'*30)
 
-for i in range(alen):
-    tempi = model.transformer.h[i].self_attention.query_key_value.weight
-    ui, si, vi = torch.svd(tempi)
-    print('self_attention.qkv', i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
-print('-'*30)
+    for i in range(alen):
+        tempi = model.transformer.h[i].self_attention.dense.weight
+        ui, si, vi = torch.svd(tempi)
+        print(model_name_or_path, 
+                'self_attention.output', 
+                i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
+    print('-'*30)
 
-for i in range(alen):
-    tempi = model.transformer.h[i].self_attention.dense.weight
-    ui, si, vi = torch.svd(tempi)
-    print('self_attention.output', i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
-print('-'*30)
+    for i in range(alen):
+        tempi = model.transformer.h[i].mlp.dense_h_to_4h.weight
+        ui, si, vi = torch.svd(tempi)
+        print(model_name_or_path, 
+                'mlp.dense_h_to_4h', 
+                i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
+    print('-'*30)
 
-for i in range(alen):
-    tempi = model.transformer.h[i].mlp.dense_h_to_4h.weight
-    ui, si, vi = torch.svd(tempi)
-    print('mlp.dense_h_to_4h', i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
-print('-'*30)
+    for i in range(alen):
+        tempi = model.transformer.h[i].mlp.dense_4h_to_h.weight
+        ui, si, vi = torch.svd(tempi)
+        print(model_name_or_path, 
+                'mlp.dense_4h_to_h', 
+                i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
+    print('-'*30)
 
-for i in range(alen):
-    tempi = model.transformer.h[i].mlp.dense_4h_to_h.weight
-    ui, si, vi = torch.svd(tempi)
-    print('mlp.dense_4h_to_h', i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
-print('-'*30)
+models = ['bigscience/bloomz-3b', 'bigscience/bloomz-7b1', 'bigscience/bloomz-1b7']
+for amodel in models:
+    svd(amodel)
+
+import sys
+sys.exit(0)
 
 
 import ipdb; ipdb.set_trace()
