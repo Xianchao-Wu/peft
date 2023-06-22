@@ -5,10 +5,13 @@
 
 
 from transformers import AutoModelForCausalLM
+import os
+import sys
+sys.path.append(os.getcwd()+"/../../src")
+
 from peft import get_peft_config, get_peft_model, PromptTuningInit, PromptTuningConfig, TaskType, PeftType
 import torch
 from datasets import load_dataset
-import os
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
 from transformers import default_data_collator, get_linear_schedule_with_warmup
@@ -17,16 +20,18 @@ from datasets import load_dataset
 
 cache_dir=os.getcwd()
 
-device = "cuda:2"
+device = "cuda:0"
 model_name_or_path = "bigscience/bloomz-560m"
 tokenizer_name_or_path = "bigscience/bloomz-560m"
+
+import ipdb; ipdb.set_trace()
 peft_config = PromptTuningConfig(
     task_type=TaskType.CAUSAL_LM,
     prompt_tuning_init=PromptTuningInit.TEXT,
     num_virtual_tokens=8,
     prompt_tuning_init_text="Classify if the tweet is a complaint or not:",
     tokenizer_name_or_path=model_name_or_path,
-)
+) # PromptTuningConfig(peft_type=<PeftType.PROMPT_TUNING: 'PROMPT_TUNING'>, base_model_name_or_path=None, task_type=<TaskType.CAUSAL_LM: 'CAUSAL_LM'>, inference_mode=False, num_virtual_tokens=8, token_dim=None, num_transformer_submodules=None, num_attention_heads=None, num_layers=None, prompt_tuning_init=<PromptTuningInit.TEXT: 'TEXT'>, prompt_tuning_init_text='Classify if the tweet is a complaint or not:', tokenizer_name_or_path='bigscience/bloomz-560m')
 
 dataset_name = "twitter_complaints"
 #checkpoint_name = f"{dataset_name}_{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_v1.pt".replace(
@@ -179,6 +184,14 @@ import ipdb; ipdb.set_trace()
 # creating model
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
 model = get_peft_model(model, peft_config)
+'''
+  (prompt_encoder): ModuleDict(
+    (default): PromptEmbedding(
+      (embedding): Embedding(8, 1024)
+    )
+  )
+'''
+
 model.print_trainable_parameters()
 # trainable params: 8192 || all params: 559222784 || trainable%: 0.0014648902430985358
 # NOTE
@@ -203,7 +216,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 model = model.to(device)
 peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
-is_train=False #True
+is_train = False #True
 if is_train:
     for epoch in range(num_epochs):
         model.train()
@@ -257,10 +270,11 @@ print(inputs)
 
 with torch.no_grad():
     inputs = {k: v.to(device) for k, v in inputs.items()}
+    import ipdb; ipdb.set_trace()
     outputs = model.generate(
         input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], 
         max_new_tokens=10, eos_token_id=3
-    )
+    ) # input_ids=[1, 43]; attention_mask=[1, 43]
     print(outputs)
     print(tokenizer.batch_decode(outputs.detach().cpu().numpy(), skip_special_tokens=True))
 
@@ -298,6 +312,7 @@ print(inputs)
 
 with torch.no_grad():
     inputs = {k: v.to(device) for k, v in inputs.items()}
+    import ipdb; ipdb.set_trace()
     outputs = model.generate(
         input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], max_new_tokens=10, eos_token_id=3
     )

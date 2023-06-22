@@ -100,22 +100,22 @@ class PeftConfigMixin(PushToHubMixin):
             else pretrained_model_name_or_path
         )
         if os.path.isfile(os.path.join(path, CONFIG_NAME)):
-            config_file = os.path.join(path, CONFIG_NAME)
+            config_file = os.path.join(path, CONFIG_NAME) # 'bigscience/bloomz-560m_PREFIX_TUNING_CAUSAL_LM_epoch200/adapter_config.json' NOTE
         else:
             try:
                 config_file = hf_hub_download(pretrained_model_name_or_path, CONFIG_NAME, subfolder=subfolder)
             except Exception:
                 raise ValueError(f"Can't find '{CONFIG_NAME}' at '{pretrained_model_name_or_path}'")
 
-        loaded_attributes = cls.from_json_file(config_file)
+        loaded_attributes = cls.from_json_file(config_file) # {'base_model_name_or_path': 'bigscience/bloomz-560m', 'encoder_hidden_size': 1024, 'inference_mode': True, 'num_attention_heads': 16, 'num_layers': 24, 'num_transformer_submodules': 1, 'num_virtual_tokens': 30, 'peft_type': 'PREFIX_TUNING', 'prefix_projection': False, 'task_type': 'CAUSAL_LM', 'token_dim': 1024}
 
-        config = cls(**kwargs)
+        config = cls(**kwargs) # <class 'peft.utils.config.PeftConfig'>
 
         for key, value in loaded_attributes.items():
             if hasattr(config, key):
                 setattr(config, key, value)
 
-        return config
+        return config # PeftConfig(peft_type='PREFIX_TUNING', base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=True)
 
     @classmethod
     def from_json_file(cls, path_json_file, **kwargs):

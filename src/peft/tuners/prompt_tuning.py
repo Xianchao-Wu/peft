@@ -103,26 +103,30 @@ class PromptEmbedding(torch.nn.Module):
     def __init__(self, config, word_embeddings):
         super().__init__()
 
-        total_virtual_tokens = config.num_virtual_tokens * config.num_transformer_submodules
-        self.embedding = torch.nn.Embedding(total_virtual_tokens, config.token_dim)
+        total_virtual_tokens = config.num_virtual_tokens * config.num_transformer_submodules # 8*1
+        self.embedding = torch.nn.Embedding(total_virtual_tokens, config.token_dim) # Embedding(8, 1024)
         if config.prompt_tuning_init == PromptTuningInit.TEXT:
-            from transformers import AutoTokenizer
-
-            tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_name_or_path)
-            init_text = config.prompt_tuning_init_text
-            init_token_ids = tokenizer(init_text)["input_ids"]
-            # Trim or iterate until num_text_tokens matches total_virtual_tokens
-            num_text_tokens = len(init_token_ids)
+            from transformers import AutoTokenizer # NOTE in
+            import os
+            tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_name_or_path, cache_dir=os.getcwd()) # 'bigscience/bloomz-560m' -> BloomTokenizerFast(name_or_path='bigscience/bloomz-560m', vocab_size=250680, model_max_length=1000000000000000019884624838656, is_fast=True, padding_side='left', truncation_side='right', special_tokens={'bos_token': '<s>', 'eos_token': '</s>', 'unk_token': '<unk>', 'pad_token': '<pad>'}, clean_up_tokenization_spaces=False)
+            init_text = config.prompt_tuning_init_text # 'Classify if the tweet is a complaint or not:'
+            init_token_ids = tokenizer(init_text)["input_ids"] # len=11
+            # [8456, 6552, 1320, 368, 98254, 632, 267, 106863, 791, 1130, 29]
+            # Trim or iterate until num_text_tokens matches total_virtual_tokens -> 这个有问题... 反正就是一种初始化的方法而已，不必过于纠结... 中间在训练的时候，这个都会被更新，重新根据data来学习的.
+            num_text_tokens = len(init_token_ids) # 11
             if num_text_tokens > total_virtual_tokens:
-                init_token_ids = init_token_ids[:total_virtual_tokens]
+                init_token_ids = init_token_ids[:total_virtual_tokens] # 只取前8个
+                # [8456, 6552, 1320, 368, 98254, 632, 267, 106863]
             elif num_text_tokens < total_virtual_tokens:
                 num_reps = math.ceil(total_virtual_tokens / num_text_tokens)
                 init_token_ids = init_token_ids * num_reps
-            init_token_ids = init_token_ids[:total_virtual_tokens]
-
-            word_embedding_weights = word_embeddings(torch.LongTensor(init_token_ids)).detach().clone()
+            init_token_ids = init_token_ids[:total_virtual_tokens] # NOTE is this necessary?
+            # NOTE 这里还是有bug的，因为事先设定的prompt 'Classify if the tweet is a complaint or not:'
+            # 经过tokenizer之后，得到的长度为11，但是目前配置文件中，设置的是8.
+            # 这种对提示prompt的截取，是有问题的. TODO
+            word_embedding_weights = word_embeddings(torch.LongTensor(init_token_ids)).detach().clone() # [8, 1024]
             word_embedding_weights = word_embedding_weights.to(torch.float32)
-            self.embedding.weight = torch.nn.Parameter(word_embedding_weights)
+            self.embedding.weight = torch.nn.Parameter(word_embedding_weights) # 这个相当于用word_embedding_weights来初始化self.embedding.weight了 NOTE 仍然是可训练的
 
     def forward(self, indices):
         # Just get embeddings

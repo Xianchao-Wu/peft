@@ -147,6 +147,7 @@ class LoraModel(torch.nn.Module):
     """
 
     def __init__(self, model, config, adapter_name):
+        #import ipdb; ipdb.set_trace()
         super().__init__()
         self.model = model
         self.forward = self.model.forward
@@ -206,7 +207,7 @@ class LoraModel(torch.nn.Module):
                         lora_config.init_lora_weights,
                     )
                 else:
-                    if loaded_in_8bit and isinstance(target, bnb.nn.Linear8bitLt):
+                    if loaded_in_8bit and isinstance(target, bnb.nn.Linear8bitLt): # NOTE
                         eightbit_kwargs = kwargs.copy()
                         eightbit_kwargs.update(
                             {
@@ -679,13 +680,13 @@ if is_bnb_available():
         # Lora implemented in a dense layer
         def __init__(
             self,
-            adapter_name,
-            in_features,
-            out_features,
-            r: int = 0,
-            lora_alpha: int = 1,
-            lora_dropout: float = 0.0,
-            **kwargs,
+            adapter_name, # 'default'
+            in_features, # 4096
+            out_features, # 4096
+            r: int = 0, # 8
+            lora_alpha: int = 1, # 16
+            lora_dropout: float = 0.0, # 0.05
+            **kwargs, # {'bias': False, 'fan_in_fan_out': False, 'init_lora_weights': True, 'has_fp16_weights': False, 'memory_efficient_backward': False, 'threshold': 6.0, 'index': None}
         ):
             bnb.nn.Linear8bitLt.__init__(
                 self,
@@ -702,7 +703,7 @@ if is_bnb_available():
             # Freezing the pre-trained weight matrix
             self.weight.requires_grad = False
             init_lora_weights = kwargs.pop("init_lora_weights", True)
-            self.update_layer(adapter_name, r, lora_alpha, lora_dropout, init_lora_weights)
+            self.update_layer(adapter_name, r, lora_alpha, lora_dropout, init_lora_weights) # NOTE
             self.active_adapter = adapter_name
 
         def forward(self, x: torch.Tensor):

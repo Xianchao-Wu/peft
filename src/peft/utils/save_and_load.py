@@ -98,7 +98,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
     else:
         state_dict = peft_model_state_dict
 
-    if config.peft_type in (PeftType.LORA, PeftType.ADALORA):
+    if config.peft_type in (PeftType.LORA, PeftType.ADALORA): # NOTE
         peft_model_state_dict = {}
         for k, v in state_dict.items():
             if "lora_" in k:
@@ -120,8 +120,8 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
     else:
         raise NotImplementedError
 
-    model.load_state_dict(peft_model_state_dict, strict=False)
+    model.load_state_dict(peft_model_state_dict, strict=False) # NOTE 把预训练好的adapter weight，赋值给model对应位置
     if isinstance(config, PromptLearningConfig):
         model.prompt_encoder[adapter_name].embedding.load_state_dict(
-            {"weight": peft_model_state_dict["prompt_embeddings"]}, strict=True
+            {"weight": peft_model_state_dict["prompt_embeddings"]}, strict=True # NOTE
         )

@@ -5,10 +5,13 @@
 
 
 from transformers import AutoModelForCausalLM
+#from peft import get_peft_config, get_peft_model, PrefixTuningConfig, TaskType, PeftType
+import os
+import sys
+sys.path.append(os.getcwd()+'/../../src')
 from peft import get_peft_config, get_peft_model, PrefixTuningConfig, TaskType, PeftType
 import torch
 from datasets import load_dataset
-import os
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
 from transformers import default_data_collator, get_linear_schedule_with_warmup
@@ -17,9 +20,11 @@ from tqdm import tqdm
 
 cache_dir=os.getcwd()
 
-device = "cuda:1"
+device = "cuda:0"
 model_name_or_path = "bigscience/bloomz-560m"
 tokenizer_name_or_path = "bigscience/bloomz-560m"
+
+# NOTE 
 peft_config = PrefixTuningConfig(task_type=TaskType.CAUSAL_LM, num_virtual_tokens=30) # PrefixTuningConfig(peft_type=<PeftType.PREFIX_TUNING: 'PREFIX_TUNING'>, base_model_name_or_path=None, task_type=<TaskType.CAUSAL_LM: 'CAUSAL_LM'>, inference_mode=False, num_virtual_tokens=30, token_dim=None, num_transformer_submodules=None, num_attention_heads=None, num_layers=None, encoder_hidden_size=None, prefix_projection=False)
 
 dataset_name = "twitter_complaints"
@@ -179,7 +184,8 @@ import ipdb; ipdb.set_trace()
 
 # creating model, NOTE
 
-model = AutoModelForCausalLM.from_pretrained(model_name_or_path, cache_dir=cache_dir) # 559,214,592
+model = AutoModelForCausalLM.from_pretrained(model_name_or_path, 
+        cache_dir=cache_dir) # 559,214,592
 model.to('cuda:0')
 temp1 = model.transformer.h[0].mlp.dense_4h_to_h.weight[:, :1024]
 temp2 = model.transformer.h[-1].mlp.dense_4h_to_h.weight[:, :1024]
@@ -194,34 +200,38 @@ def svd(alen, amatrix, aname):
         ui, si, vi = torch.svd(amatrix)
         print(aname, i, sum(si).item())
 
-for i in range(alen):
-    tempi = model.transformer.h[i].self_attention.query_key_value.weight
-    ui, si, vi = torch.svd(tempi)
-    print('self_attention.qkv', i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
-print('-'*30)
+def compute_svds():
+    for i in range(alen):
+        tempi = model.transformer.h[i].self_attention.query_key_value.weight
+        ui, si, vi = torch.svd(tempi)
+        print('self_attention.qkv', i, 
+                sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
+    print('-'*30)
 
-for i in range(alen):
-    tempi = model.transformer.h[i].self_attention.dense.weight
-    ui, si, vi = torch.svd(tempi)
-    print('self_attention.output', i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
-print('-'*30)
+    for i in range(alen):
+        tempi = model.transformer.h[i].self_attention.dense.weight
+        ui, si, vi = torch.svd(tempi)
+        print('self_attention.output', i, 
+                sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
+    print('-'*30)
 
-for i in range(alen):
-    tempi = model.transformer.h[i].mlp.dense_h_to_4h.weight
-    ui, si, vi = torch.svd(tempi)
-    print('mlp.dense_h_to_4h', i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
-print('-'*30)
+    for i in range(alen):
+        tempi = model.transformer.h[i].mlp.dense_h_to_4h.weight
+        ui, si, vi = torch.svd(tempi)
+        print('mlp.dense_h_to_4h', i, 
+                sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
+    print('-'*30)
 
-for i in range(alen):
-    tempi = model.transformer.h[i].mlp.dense_4h_to_h.weight
-    ui, si, vi = torch.svd(tempi)
-    print('mlp.dense_4h_to_h', i, sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
-print('-'*30)
+    for i in range(alen):
+        tempi = model.transformer.h[i].mlp.dense_4h_to_h.weight
+        ui, si, vi = torch.svd(tempi)
+        print('mlp.dense_4h_to_h', i, 
+                sum(si).item(), len(si), sum(si).item()/len(si), si.shape, ui.shape, vi.shape)
+    print('-'*30)
 
 
 import ipdb; ipdb.set_trace()
-
-model = get_peft_model(model, peft_config) # 560,689,152
+model = get_peft_model(model, peft_config) # 560,689,152, <class 'peft.peft_model.PeftModelForCausalLM'>
 model.print_trainable_parameters()
 
 # trainable params: 1474560 || all params: 560689152 || trainable%: 0.26299064191632515
@@ -239,7 +249,7 @@ print(model)
 # In[12]:
 
 
-print(model.peft_config)
+print(model.peft_config) # {'default': PrefixTuningConfig(peft_type=<PeftType.PREFIX_TUNING: 'PREFIX_TUNING'>, base_model_name_or_path='bigscience/bloomz-560m', task_type=<TaskType.CAUSAL_LM: 'CAUSAL_LM'>, inference_mode=False, num_virtual_tokens=30, token_dim=1024, num_transformer_submodules=1, num_attention_heads=16, num_layers=24, encoder_hidden_size=1024, prefix_projection=False)}
 
 
 # In[13]:
@@ -260,7 +270,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 model = model.to(device)
 peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
-is_train = True # False # NOTE
+is_train = False # NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
@@ -308,7 +318,8 @@ if is_train:
 import ipdb; ipdb.set_trace()
 model.eval()
 i = 4
-inputs = tokenizer(f'{text_column} : {dataset["test"][i]["Tweet text"]} Label : ', return_tensors="pt")
+inputs = tokenizer(f'{text_column} : {dataset["test"][i]["Tweet text"]} Label : ', 
+        return_tensors="pt")
 print(dataset["test"][i]["Tweet text"])
 print(inputs)
 
@@ -337,10 +348,12 @@ os.system('du -h {}'.format(ckpt))
 
 from peft import PeftModel, PeftConfig
 
-#peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
+#peft_model_id = 
+#f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
 config = PeftConfig.from_pretrained(peft_model_id)
-model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir)
+model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path, 
+        cache_dir=cache_dir)
 model = PeftModel.from_pretrained(model, peft_model_id)
 
 
@@ -350,14 +363,16 @@ model = PeftModel.from_pretrained(model, peft_model_id)
 model.to(device)
 model.eval()
 i = 4
-inputs = tokenizer(f'{text_column} : {dataset["test"][i]["Tweet text"]} Label : ', return_tensors="pt")
+inputs = tokenizer(f'{text_column} : {dataset["test"][i]["Tweet text"]} Label : ', 
+        return_tensors="pt")
 print(dataset["test"][i]["Tweet text"])
 print(inputs)
 
 with torch.no_grad():
     inputs = {k: v.to(device) for k, v in inputs.items()}
     outputs = model.generate(
-        input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], max_new_tokens=10, 
+        input_ids=inputs["input_ids"], 
+        attention_mask=inputs["attention_mask"], max_new_tokens=10, 
         eos_token_id=3
     )
     print(outputs)

@@ -81,16 +81,16 @@ class PrefixEncoder(torch.nn.Module):
 
     Output shape: (`batch_size`, `num_virtual_tokens`, `2*layers*hidden`)
     """
-
-    def __init__(self, config):
+    def __init__(self, config): # PrefixTuningConfig(peft_type=<PeftType.PREFIX_TUNING: 'PREFIX_TUNING'>, base_model_name_or_path='bigscience/bloomz-560m', task_type=<TaskType.CAUSAL_LM: 'CAUSAL_LM'>, inference_mode=False, num_virtual_tokens=30, token_dim=1024, num_transformer_submodules=1, num_attention_heads=16, num_layers=24, encoder_hidden_size=1024, prefix_projection=False)
+        import ipdb; ipdb.set_trace()
         super().__init__()
-        self.prefix_projection = config.prefix_projection
-        token_dim = config.token_dim
-        num_layers = config.num_layers
-        encoder_hidden_size = config.encoder_hidden_size
-        num_virtual_tokens = config.num_virtual_tokens
+        self.prefix_projection = config.prefix_projection # False
+        token_dim = config.token_dim # 1024
+        num_layers = config.num_layers # 24
+        encoder_hidden_size = config.encoder_hidden_size # 1024
+        num_virtual_tokens = config.num_virtual_tokens # 30
         if self.prefix_projection and not config.inference_mode:
-            # Use a two-layer MLP to encode the prefix
+            # Use a two-layer MLP to encode the prefix, TODO, currently not in
             self.embedding = torch.nn.Embedding(num_virtual_tokens, token_dim)
             self.transform = torch.nn.Sequential(
                 torch.nn.Linear(token_dim, encoder_hidden_size),
@@ -98,12 +98,15 @@ class PrefixEncoder(torch.nn.Module):
                 torch.nn.Linear(encoder_hidden_size, num_layers * 2 * token_dim),
             )
         else:
-            self.embedding = torch.nn.Embedding(num_virtual_tokens, num_layers * 2 * token_dim)
+            self.embedding = torch.nn.Embedding(num_virtual_tokens, num_layers * 2 * token_dim) 
+            # (30, 49152=24*2*1024) NOTE -> Embedding(30, 49152)
 
     def forward(self, prefix: torch.Tensor):
         if self.prefix_projection:
             prefix_tokens = self.embedding(prefix)
             past_key_values = self.transform(prefix_tokens)
         else:
-            past_key_values = self.embedding(prefix)
+            past_key_values = self.embedding(prefix) 
+            # NOTE key and value, 所以，line101需要*2，来确保我们为每一层都构造出来key和value!!!
         return past_key_values
+

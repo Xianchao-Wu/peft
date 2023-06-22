@@ -194,6 +194,7 @@ model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
 
 from peft import LoraConfig, get_peft_model
 
+import ipdb; ipdb.set_trace()
 config_lora = LoraConfig(
         r=8,
         lora_alpha=32,
@@ -244,7 +245,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 # training and evaluation
 model = model.to(device)
 
-is_train = False #True # False NOTE
+is_train = True # False NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
