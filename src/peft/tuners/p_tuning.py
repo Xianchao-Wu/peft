@@ -118,12 +118,12 @@ class PromptEncoder(torch.nn.Module):
         self.output_size = self.token_dim
         self.hidden_size = config.encoder_hidden_size
         self.total_virtual_tokens = config.num_virtual_tokens * config.num_transformer_submodules
-        self.encoder_type = config.encoder_reparameterization_type
+        self.encoder_type = config.encoder_reparameterization_type # 'MLP'
 
         # embedding
-        self.embedding = torch.nn.Embedding(self.total_virtual_tokens, self.token_dim)
+        self.embedding = torch.nn.Embedding(self.total_virtual_tokens, self.token_dim) # Embedding(20, 1024)
         if not config.inference_mode:
-            if self.encoder_type == PromptEncoderReparameterizationType.LSTM:
+            if self.encoder_type == PromptEncoderReparameterizationType.LSTM: # TODO
                 lstm_dropout = config.encoder_dropout
                 num_layers = config.encoder_num_layers
                 # LSTM
@@ -147,11 +147,11 @@ class PromptEncoder(torch.nn.Module):
                     f"for {self.encoder_type}, the `encoder_num_layers` is ignored. Exactly 2 MLP layers are used."
                 )
                 layers = [
-                    torch.nn.Linear(self.input_size, self.hidden_size),
+                    torch.nn.Linear(self.input_size, self.hidden_size), # 1024, 1024
                     torch.nn.ReLU(),
-                    torch.nn.Linear(self.hidden_size, self.hidden_size),
+                    torch.nn.Linear(self.hidden_size, self.hidden_size), # 1024, 1024
                     torch.nn.ReLU(),
-                    torch.nn.Linear(self.hidden_size, self.output_size),
+                    torch.nn.Linear(self.hidden_size, self.output_size), # 1024, 1024
                 ]
                 self.mlp_head = torch.nn.Sequential(*layers)
 

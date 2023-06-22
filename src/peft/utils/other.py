@@ -120,11 +120,11 @@ class ModulesToSaveWrapper(torch.nn.Module):
 
 
 def _get_submodules(model, key):
-    parent = model.get_submodule(".".join(key.split(".")[:-1]))
+    parent = model.get_submodule(".".join(key.split(".")[:-1])) # > /opt/conda/lib/python3.8/site-packages/torch/nn/modules/module.py(459)get_submodule(); e.g., 'transformer.h.0.self_attention.query_key_value' -> 找前一个 -> 'transformer.h.0.self_attention'
     target_name = key.split(".")[-1]
     target = model.get_submodule(key)
-    return parent, target, target_name
-
+    return parent, target, target_name # 父亲模块，当前模块，当前模块的名字
+    # parent=module with name='transformer.h.0.self_attention', target=module with name='query_key_value', target_name=query_key_value'
 
 def _freeze_adapter(model, adapter_name):
     for n, p in model.named_parameters():
