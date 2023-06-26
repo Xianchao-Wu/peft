@@ -10,6 +10,7 @@ import sys
 sys.path.append(os.getcwd()+"/../../src")
 from peft import get_peft_config, get_peft_model, PrefixTuningConfig, TaskType, PeftType
 import torch
+torch.autograd.set_detect_anomaly(True)
 from datasets import load_dataset
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
@@ -257,10 +258,12 @@ if is_train:
             # batch['attention_mask']=[8, 64], batch['labels']=[8, 64] NOTE 
             #         print(batch)
             #         print(batch["input_ids"].shape)
+            #import ipdb; ipdb.set_trace()
             outputs = model(**batch) 
             # TODO forward, need to check the forward algorithm details... NOTE
             loss = outputs.loss
             total_loss += loss.detach().float()
+            #import ipdb; ipdb.set_trace()
             loss.backward()
             optimizer.step()
             lr_scheduler.step()

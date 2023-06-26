@@ -599,13 +599,16 @@ class Linear(nn.Linear, LazyLoraLayer):
                 self.unmerge()
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
         elif self.r[self.active_adapter] > 0 and not self.merged:
-            if self.active_adapter in self.lazy_pre_lora_A:
+            #import ipdb; ipdb.set_trace()
+            debug = True #False
+            if debug and self.active_adapter in self.lazy_pre_lora_A:
                 x = x.transpose(1, 2)
-                x += self.scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
+                #x = self.scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
+                x = 0.1 * self.lazy_pre_lora_B[self.active_adapter](
                         self.lazy_pre_lora_dropout[self.active_adapter](
                             self.lazy_pre_lora_A[self.active_adapter](x)
                             )
-                        )  
+                        ) + x  
                 x = x.transpose(1, 2).contiguous()
 
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias) # NOTE here
