@@ -32,6 +32,7 @@ from .tuners import (
     AdaLoraModel,
     AdaptionPromptModel,
     LoraModel,
+    LazyLoraModel,
     PrefixEncoder,
     PromptEmbedding,
     PromptEncoder,
@@ -53,6 +54,7 @@ from .utils import (
 
 PEFT_TYPE_TO_MODEL_MAPPING = {
     PeftType.LORA: LoraModel,
+    PeftType.LAZY_LORA: LazyLoraModel,
     PeftType.PROMPT_TUNING: PromptEmbedding,
     PeftType.P_TUNING: PromptEncoder,
     PeftType.PREFIX_TUNING: PrefixEncoder,
@@ -98,7 +100,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             self.peft_config[adapter_name] = peft_config
             self.base_model = PEFT_TYPE_TO_MODEL_MAPPING[peft_config.peft_type](
                 self.base_model, self.peft_config, adapter_name
-            ) # LoRA
+            ) # LoRA, AdaLoRA
             self.set_additional_trainable_modules(peft_config, adapter_name)
         else:
             import ipdb; ipdb.set_trace() # prefix-tuning, prompt-tuning, p-tuning
@@ -683,10 +685,10 @@ class PeftModelForCausalLM(PeftModel):
         return_dict=None,
         **kwargs,
     ):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         peft_config = self.active_peft_config
         if not isinstance(peft_config, PromptLearningConfig):
-            return self.base_model(  # NOTE for LoRA, call base_model's forward func directly
+            return self.base_model(  # NOTE for LoRA, AdaLoRA, call base_model's forward func directly
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 inputs_embeds=inputs_embeds,

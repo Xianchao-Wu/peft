@@ -24,6 +24,7 @@ from .tuners import (
     AdaLoraConfig,
     AdaptionPromptConfig,
     LoraConfig,
+    LazyLoraConfig,
     PrefixTuningConfig,
     PromptEncoderConfig,
     PromptTuningConfig,
@@ -44,6 +45,7 @@ PEFT_TYPE_TO_CONFIG_MAPPING = {
     "PREFIX_TUNING": PrefixTuningConfig,
     "P_TUNING": PromptEncoderConfig,
     "LORA": LoraConfig,
+    "LAZY_LORA": LazyLoraConfig,
     "ADALORA": AdaLoraConfig,
 }
 
