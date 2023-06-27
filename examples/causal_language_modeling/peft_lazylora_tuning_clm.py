@@ -8,7 +8,7 @@ from transformers import AutoModelForCausalLM
 import os
 import sys
 sys.path.append(os.getcwd()+"/../../src")
-from peft import get_peft_config, get_peft_model, PrefixTuningConfig, TaskType, PeftType
+from peft import get_peft_config, get_peft_model, PrefixTuningConfig, TaskType, PeftType, PromptTuningConfig, PromptTuningInit
 import torch
 torch.autograd.set_detect_anomaly(True)
 from datasets import load_dataset
@@ -37,7 +37,7 @@ text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
 lr = 3e-2
-num_epochs = 500 # NOTE TODO, change this to 50 for the real peft
+num_epochs = 50 # NOTE TODO, change this to 50 for the real peft
 batch_size = 8
 
 
@@ -197,14 +197,29 @@ model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
 
 from peft import LazyLoraConfig, get_peft_model
 
+peft_config_prompt_tuning = PromptTuningConfig(
+    task_type=TaskType.CAUSAL_LM,
+    prompt_tuning_init=PromptTuningInit.TEXT,
+    num_virtual_tokens=8,
+    prompt_tuning_init_text="Classify if the tweet is a complaint or not:",
+    tokenizer_name_or_path=model_name_or_path,
+) # PromptTuningConfig(peft_type=<PeftType.PROMPT_TUNING: 'PROMPT_TUNING'>, base_model_name_or_path=None, task_type=<Ta
+#skType.CAUSAL_LM: 'CAUSAL_LM'>, inference_mode=False, num_virtual_tokens=8, token_dim=None, num_transformer_submodules=
+#None, num_attention_heads=None, num_layers=None, prompt_tuning_init=<PromptTuningInit.TEXT: 'TEXT'>, prompt_tuning_init
+#_text='Classify if the tweet is a complaint or not:', tokenizer_name_or_path='bigscience/bloomz-560m')
+
+
 import ipdb; ipdb.set_trace()
 config_lazy_lora = LazyLoraConfig(
         r=8,
         lazy_lora_alpha=32,
+        lazy_pre_lora_alpha=0.1, 
+        lazy_pre_adapter_type='none', #'linear',
         target_modules=['query_key_value'],
         lazy_lora_dropout=0.05,
         bias='none',
-        task_type='CAUSAL_LM'
+        task_type='CAUSAL_LM',
+        prompt_tuning_config=peft_config_prompt_tuning,
         ) 
 peft_config = config_lazy_lora
 

@@ -24,11 +24,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers.pytorch_utils import Conv1D
 
+from .prompt_tuning import PromptTuningConfig
+
 from ..import_utils import is_bnb_4bit_available, is_bnb_available
 from ..utils import (
     TRANSFORMERS_MODELS_TO_LAZY_LORA_TARGET_MODULES_MAPPING,
     ModulesToSaveWrapper,
     PeftConfig,
+    PromptLearningConfig,
     PeftType,
     _freeze_adapter,
     _get_submodules,
@@ -41,7 +44,7 @@ if is_bnb_available():
 
 
 @dataclass
-class LazyLoraConfig(PeftConfig):
+class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
     """
     This is the configuration class to store the configuration of a [`LazyLoraModel`].
 
@@ -49,12 +52,16 @@ class LazyLoraConfig(PeftConfig):
         r (`int`): lazy Lora attention dimension.
         target_modules (`Union[List[str],str]`): The names of the modules to apply Lazy Lora to.
         lazy_lora_alpha (`float`): The alpha parameter for Lazy Lora scaling.
+        lazy_pre_lora_alpha (`float`): The alpha parameter for Pre-Lazy Lora (LLaMA adapter) scaling.
         lazy_lora_dropout (`float`): The dropout probability for Lazy Lora layers.
         fan_in_fan_out (`bool`): Set this to True if the layer to replace stores weight like (fan_in, fan_out).
         For example, gpt-2 uses `Conv1D` which stores weights like (fan_in, fan_out) and hence this should be set to `True`.:
         bias (`str`): Bias type for Lazy Lora. Can be 'none', 'all' or 'lora_only'
         modules_to_save (`List[str]`):List of modules apart from Lazy LoRA layers to be set as trainable
             and saved in the final checkpoint.
+
+        prompt_tuning_config (`PromptTuningConfig`): The config for prompt tuning
+
     """
 
     r: int = field(default=8, metadata={"help": "Lazy Lora attention dimension"})
@@ -66,12 +73,20 @@ class LazyLoraConfig(PeftConfig):
         },
     )
     lazy_lora_alpha: int = field(default=None, metadata={"help": "lazy Lora alpha"})
+    lazy_pre_lora_alpha: float = field(default=None, metadata={"help": "lazy Pre-Lora adapter alpha, default=0.1"})
     lazy_lora_dropout: float = field(default=None, metadata={"help": "Lazy Lora dropout"})
     fan_in_fan_out: bool = field(
         default=False,
         metadata={"help": "Set this to True if the layer to replace stores weight like (fan_in, fan_out)"},
     )
-    bias: str = field(default="none", metadata={"help": "Bias type for lazy Lora. Can be 'none', 'all' or 'lora_only'"})
+    bias: str = field(
+        default="none", 
+        metadata={"help": "Bias type for lazy Lora. Can be 'none', 'all' or 'lora_only'"}
+    )
+    lazy_pre_adapter_type: str = field(
+        default="linear", 
+        metadata={"help": "LLaMa Adapter type for lazy Lora. Can be 'none', 'linear' or 'conv1d'"}
+    )
     modules_to_save: Optional[List[str]] = field(
         default=None,
         metadata={
@@ -83,6 +98,12 @@ class LazyLoraConfig(PeftConfig):
     init_lazy_lora_weights: bool = field(
         default=True,
         metadata={"help": "Whether to initialize the weights of the lazy Lora layers."},
+    )
+
+    #--- for prompt learning
+    prompt_tuning_config : PromptTuningConfig = field(
+        default=None,
+        metadata={'help': 'config for prompt tuning'}
     )
 
     def __post_init__(self):
@@ -111,6 +132,8 @@ class LazyLoraModel(torch.nn.Module):
         ...     task_type="SEQ_2_SEQ_LM",
         ...     r=8,
         ...     lazy_lora_alpha=32,
+        ...     lazy_pre_lora_alpha=0.1,
+        ...     lazy_pre_adapter_type='linear', 
         ...     target_modules=["q", "v"],
         ...     lazy_lora_dropout=0.01,
         ... )
@@ -125,7 +148,7 @@ class LazyLoraModel(torch.nn.Module):
 
         >>> target_modules = ["q_proj", "k_proj", "v_proj", "out_proj", "fc_in", "fc_out", "wte"]
         >>> config = LazyLoraConfig(
-        ...     r=4, lazy_lora_alpha=16, target_modules=target_modules, lazy_lora_dropout=0.1, bias="none", task_type="CAUSAL_LM"
+        ...     r=4, lazy_lora_alpha=16, lazy_pre_lora_alpha=0.1, lazy_pre_adapter_type='linear', target_modules=target_modules, lazy_lora_dropout=0.1, bias="none", task_type="CAUSAL_LM"
         ... )
 
         >>> model = transformers.GPTJForCausalLM.from_pretrained(
@@ -181,9 +204,11 @@ class LazyLoraModel(torch.nn.Module):
         kwargs = {
             "r": lazy_lora_config.r, # 8
             "lazy_lora_alpha": lazy_lora_config.lazy_lora_alpha, # 32
+            "lazy_pre_lora_alpha": lazy_lora_config.lazy_pre_lora_alpha, # 0.1
             "lazy_lora_dropout": lazy_lora_config.lazy_lora_dropout, # 0.05
             "fan_in_fan_out": lazy_lora_config.fan_in_fan_out, # False
             "init_lazy_lora_weights": lazy_lora_config.init_lazy_lora_weights, # True
+            "lazy_pre_adapter_type": lazy_lora_config.lazy_pre_adapter_type # 'linear', 'conv1d', or 'none'
         }
         key_list = [key for key, _ in self.model.named_modules()]
         for key in key_list:
@@ -205,6 +230,8 @@ class LazyLoraModel(torch.nn.Module):
                         lazy_lora_config.lazy_lora_alpha,
                         lazy_lora_config.lazy_lora_dropout,
                         lazy_lora_config.init_lazy_lora_weights,
+                        lazy_lora_config.lazy_pre_lora_alpha,
+                        lazy_lora_config.lazy_pre_adapter_type,
                     )
                 else:
                     if loaded_in_8bit and isinstance(target, bnb.nn.Linear8bitLt): # NOTE
@@ -443,7 +470,9 @@ class LazyLoraLayer:
     ):
         self.r = {}
         self.lazy_lora_alpha = {}
+        self.lazy_pre_lora_alpha = {}
         self.scaling = {}
+        self.pre_scaling = {}
         self.lazy_lora_dropout = nn.ModuleDict({}) # NOTE
         self.lazy_lora_A = nn.ModuleDict({}) # NOTE
         self.lazy_lora_B = nn.ModuleDict({}) # NOTE
@@ -459,9 +488,20 @@ class LazyLoraLayer:
         self.in_features = in_features # 1024
         self.out_features = out_features # 3072
 
-    def update_layer(self, adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights):
+    def update_layer(
+        self, 
+        adapter_name, 
+        r, 
+        lazy_lora_alpha, 
+        lazy_lora_dropout, 
+        init_lazy_lora_weights,
+        lazy_pre_lora_alpha,
+        lazy_pre_adapter_type,
+    ):
         self.r[adapter_name] = r
         self.lazy_lora_alpha[adapter_name] = lazy_lora_alpha
+        self.lazy_pre_lora_alpha[adapter_name] = lazy_pre_lora_alpha
+        self.lazy_pre_adapter_type = lazy_pre_adapter_type
         if lazy_lora_dropout > 0.0:
             lazy_lora_dropout_layer = nn.Dropout(p=lazy_lora_dropout)
             lazy_pre_lora_dropout_layer = nn.Dropout(p=lazy_lora_dropout)
@@ -476,18 +516,46 @@ class LazyLoraLayer:
             self.lazy_lora_A.update(nn.ModuleDict({adapter_name: nn.Linear(self.in_features, r, bias=False)})) #     (default): Linear(in_features=1024, out_features=8, bias=False)
             self.lazy_lora_B.update(nn.ModuleDict({adapter_name: nn.Linear(r, self.out_features, bias=False)})) #     (default): Linear(in_features=8, out_features=3072, bias=False)
             self.scaling[adapter_name] = lazy_lora_alpha / r # 32/8=4
-            
-            self.lazy_pre_lora_A.update(nn.ModuleDict({adapter_name: nn.Conv1d(self.in_features, r, 1, groups=1, bias=False)})) #     (default): Conv1d(in_features=1024, out_features=8, kernel_size=(1,), stride=(1,),bias=False)
-            self.lazy_pre_lora_B.update(nn.ModuleDict({adapter_name: nn.Conv1d(r, self.in_features, 1, groups=2, bias=False)})) #     (default): Conv1d(in_features=8, out_features=1024, kernel_size=(1,), stride=(1,),bias=False)
+            self.pre_scaling[adapter_name] = lazy_pre_lora_alpha # 0.1 NOTE
+           
+            if self.lazy_pre_adapter_type == 'conv1d':
+                self.lazy_pre_lora_A.update(
+                    nn.ModuleDict(
+                        {adapter_name: nn.Conv1d(self.in_features, r, 1, groups=1, bias=False)}
+                    )
+                ) # (default): Conv1d(in_features=1024, out_features=8, kernel_size=(1,), stride=(1,),bias=False) # NOTE 
+                self.lazy_pre_lora_B.update(
+                    nn.ModuleDict(
+                        {adapter_name: nn.Conv1d(r, self.in_features, 1, groups=2, bias=False)}
+                    )
+                ) # (default): Conv1d(in_features=8, out_features=1024, kernel_size=(1,), stride=(1,),bias=False) # NOTE
+            elif self.lazy_pre_adapter_type == 'linear':
+                self.lazy_pre_lora_A.update(
+                    nn.ModuleDict({adapter_name: nn.Linear(self.in_features, r, bias=False)})
+                ) 
+                self.lazy_pre_lora_B.update(
+                    nn.ModuleDict({adapter_name: nn.Linear(r, self.in_features, bias=False)})
+                ) 
+            else:
+                print('no llama adapter will be used, only support linear/conv1d, lazy_pre_adapter_type={}'.format(lazy_pre_adapter_type))
 
 
         if init_lazy_lora_weights: # True
             self.reset_lazy_lora_parameters(adapter_name)
         self.to(self.weight.device)
 
-    def update_layer_embedding(self, adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights):
+    def update_layer_embedding(
+        self, 
+        adapter_name, 
+        r, 
+        lazy_lora_alpha, 
+        lazy_lora_dropout, 
+        init_lazy_lora_weights,
+        lazy_pre_lora_alpha
+    ):
         self.r[adapter_name] = r
         self.lazy_lora_alpha[adapter_name] = lazy_lora_alpha
+        self.lazy_pre_lora_alpha[adapter_name] = lazy_pre_lora_alpha
         if lazy_lora_dropout > 0.0:
             lazy_lora_dropout_layer = nn.Dropout(p=lazy_lora_dropout)
             lazy_pre_lora_dropout_layer = nn.Dropout(p=lazy_lora_dropout)
@@ -507,6 +575,7 @@ class LazyLoraLayer:
                 nn.ParameterDict({adapter_name: nn.Parameter(self.weight.new_zeros((self.out_features, r)))})
             )
             self.scaling[adapter_name] = lazy_lora_alpha / r
+            self.pre_scaling[adapter_name] = lazy_pre_lora_alpha
         if init_lazy_lora_weights:
             self.reset_lazy_lora_parameters(adapter_name)
         self.to(self.weight.device)
@@ -518,8 +587,14 @@ class LazyLoraLayer:
             nn.init.zeros_(self.lazy_lora_B[adapter_name].weight)
         
         if adapter_name in self.lazy_pre_lora_A.keys():
-            nn.init.xavier_uniform_(self.lazy_pre_lora_A[adapter_name].weight)
-            nn.init.zeros_(self.lazy_pre_lora_B[adapter_name].weight)
+            if self.lazy_pre_adapter_type == 'conv1d':
+                nn.init.xavier_uniform_(self.lazy_pre_lora_A[adapter_name].weight)
+                nn.init.zeros_(self.lazy_pre_lora_B[adapter_name].weight)
+            elif self.lazy_pre_adapter_type == 'linear':
+                nn.init.kaiming_uniform_(self.lazy_pre_lora_A[adapter_name].weight, a=math.sqrt(5))
+                nn.init.zeros_(self.lazy_pre_lora_B[adapter_name].weight)
+            else:
+                print('skip reset pre llama adapter')
 
         if adapter_name in self.lazy_lora_embedding_A.keys():
             # initialize a the same way as the default for nn.linear and b to zero
@@ -536,8 +611,10 @@ class Linear(nn.Linear, LazyLoraLayer):
         out_features: int, # 3072
         r: int = 0, # r=8
         lazy_lora_alpha: int = 1, # 32
+        lazy_pre_lora_alpha : float = 0.1, # 0.1
         lazy_lora_dropout: float = 0.0, # 0.05
         fan_in_fan_out: bool = False,  # Set this to True if the layer to replace stores weight like (fan_in, fan_out), False
+        lazy_pre_adapter_type: str = 'linear', # 'none', 'linear', or 'conv1d'
         **kwargs, # {'bias': True, 'init_lazy_lora_weights': True}
     ):
         init_lazy_lora_weights = kwargs.pop("init_lazy_lora_weights", True)
@@ -552,7 +629,7 @@ class Linear(nn.Linear, LazyLoraLayer):
             self.weight.data = self.weight.data.T
 
         nn.Linear.reset_parameters(self) # NOTE for what? 重新设置self.weight的值... 没啥用啊... 后续还需要从checkpoint中读取... TODO
-        self.update_layer(adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights) # NOTE
+        self.update_layer(adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights, lazy_pre_lora_alpha, lazy_pre_adapter_type) # NOTE
         self.active_adapter = adapter_name # 'default'
 
     def merge(self):
@@ -600,16 +677,23 @@ class Linear(nn.Linear, LazyLoraLayer):
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
         elif self.r[self.active_adapter] > 0 and not self.merged:
             #import ipdb; ipdb.set_trace()
-            debug = True #False
-            if debug and self.active_adapter in self.lazy_pre_lora_A:
+            debug_conv1d = (self.lazy_pre_adapter_type == 'conv1d') 
+            if debug_conv1d and self.active_adapter in self.lazy_pre_lora_A:
                 x = x.transpose(1, 2)
-                #x = self.scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
-                x = 0.1 * self.lazy_pre_lora_B[self.active_adapter](
+                x = self.pre_scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
                         self.lazy_pre_lora_dropout[self.active_adapter](
                             self.lazy_pre_lora_A[self.active_adapter](x)
-                            )
+                            ) # A -> dropout -> B
                         ) + x  
                 x = x.transpose(1, 2).contiguous()
+            
+            debug_linear = (self.lazy_pre_adapter_type == 'linear')
+            if debug_linear and self.active_adapter in self.lazy_pre_lora_A:
+                x = self.pre_scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
+                        self.lazy_pre_lora_A[self.active_adapter](
+                            self.lazy_pre_lora_dropout[self.active_adapter](x)
+                            ) # dropout -> A -> B
+                        ) + x  
 
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias) # NOTE here
             # 这是调用原来的预训练里面的weight/bias, result.shape=[8, 64, 3072]
@@ -617,7 +701,9 @@ class Linear(nn.Linear, LazyLoraLayer):
 
             result += (
                 self.lazy_lora_B[self.active_adapter](
-                    self.lazy_lora_A[self.active_adapter](self.lazy_lora_dropout[self.active_adapter](x))
+                    self.lazy_lora_A[self.active_adapter](
+                        self.lazy_lora_dropout[self.active_adapter](x)
+                    )
                 )
                 * self.scaling[self.active_adapter]
             ) # residual add; x + 4.0 * (dropout -> A=1024-to-8 -> B=8-to-3072)
