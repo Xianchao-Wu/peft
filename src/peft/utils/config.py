@@ -114,7 +114,15 @@ class PeftConfigMixin(PushToHubMixin):
 
         for key, value in loaded_attributes.items():
             if hasattr(config, key):
-                setattr(config, key, value)
+                if key == 'prompt_tuning_config':
+                    # for lazy lora only
+                    from ..tuners.prompt_tuning import PromptTuningConfig
+                    temp = PromptTuningConfig()
+                    for k, v in value.items():
+                        if hasattr(temp, k):
+                            setattr(temp, k, v)
+                    value = temp
+                setattr(config, key, value) # NOTE TODO 很多内容，没有导入进来啊... why?
 
         return config # PeftConfig(peft_type='PREFIX_TUNING', base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=True)
 

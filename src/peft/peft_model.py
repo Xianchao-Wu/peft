@@ -33,6 +33,7 @@ from .tuners import (
     AdaptionPromptModel,
     LoraModel,
     LazyLoraModel,
+    LazyLoraConfig,
     PrefixEncoder,
     PromptEmbedding,
     PromptEncoder,
@@ -96,7 +97,16 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         self.active_adapter = adapter_name
         self.peft_type = peft_config.peft_type
         self.base_model_torch_dtype = getattr(model, "dtype", None) # torch.float32
-        if not isinstance(peft_config, PromptLearningConfig):
+        import ipdb; ipdb.set_trace()
+        if isinstance(peft_config, LazyLoraConfig):
+            self.peft_config[adapter_name] = peft_config
+            self.base_model = PEFT_TYPE_TO_MODEL_MAPPING[peft_config.peft_type](
+                self.base_model, self.peft_config, adapter_name
+            ) # Lazy LoRA
+            self.set_additional_trainable_modules(peft_config, adapter_name)
+            import ipdb; ipdb.set_trace() # add prompt tuning for lazy lora
+            self.add_adapter(adapter_name, peft_config)
+        elif not isinstance(peft_config, PromptLearningConfig):
             self.peft_config[adapter_name] = peft_config
             self.base_model = PEFT_TYPE_TO_MODEL_MAPPING[peft_config.peft_type](
                 self.base_model, self.peft_config, adapter_name
@@ -191,8 +201,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         self.prompt_tokens = {} # NOTE virtual tokens
         transformer_backbone = None
         for name, module in self.base_model.named_children(): # 'transformer' and 'lm_head'
-            for param in module.parameters():
-                param.requires_grad = False
+            if not config.peft_type == PeftType.LAZY_LORA:
+                for param in module.parameters():
+                    param.requires_grad = False
             if isinstance(module, PreTrainedModel): # <class 'transformers.modeling_utils.PreTrainedModel'>
                 # Make sure to freeze Tranformers model, yes, in NOTE
                 if transformer_backbone is None:
@@ -201,6 +212,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
         if config.num_transformer_submodules is None:
             config.num_transformer_submodules = 2 if config.task_type == TaskType.SEQ_2_SEQ_LM else 1
+            if config.peft_type == PeftType.LAZY_LORA:
+                config.prompt_tuning_config.num_transformer_submodules = config.num_transformer_submodules
+                config.prompt_tuning_config.token_dim = config.token_dim
+                config.num_virtual_tokens = config.prompt_tuning_config.num_virtual_tokens
 
         for named_param, value in list(transformer_backbone.named_parameters()):
             if value.shape[0] == self.base_model.config.vocab_size: # [250880, 1024] for word embedding matrix, name='word_embeddings.weight'
@@ -233,7 +248,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         )
         if self.peft_config[adapter_name].peft_type == PeftType.PREFIX_TUNING:
             prompt_tokens = prompt_tokens[:, : self.peft_config[adapter_name].num_virtual_tokens]
-        prompt_embeddings = prompt_encoder(prompt_tokens)
+        prompt_embeddings = prompt_encoder(prompt_tokens) # NOTE 保存prompt_encoder和prompt_embeddings啥区别？目前prompt tuning上，一样的啊... TODO
         return prompt_embeddings[0].detach().cpu()
 
     def get_prompt(self, batch_size):
@@ -688,7 +703,7 @@ class PeftModelForCausalLM(PeftModel):
         return_dict=None,
         **kwargs,
     ):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         peft_config = self.active_peft_config
         if not isinstance(peft_config, PromptLearningConfig):
             return self.base_model(  # NOTE for LoRA, AdaLoRA, call base_model's forward func directly

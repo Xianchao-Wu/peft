@@ -27,6 +27,7 @@ def get_peft_model_state_dict(model, state_dict=None, adapter_name="default"):
             The state dict of the model. If not provided, the state dict of the model
         will be used.
     """
+    import ipdb; ipdb.set_trace()
     config = model.peft_config[adapter_name]
     if state_dict is None:
         state_dict = model.state_dict()
@@ -57,6 +58,12 @@ def get_peft_model_state_dict(model, state_dict=None, adapter_name="default"):
                 rank_pattern = {k.replace(f".{adapter_name}", ""): v for k, v in rank_pattern.items()}
                 config.rank_pattern = rank_pattern
                 to_return = model.resize_state_dict_by_rank_pattern(rank_pattern, to_return, adapter_name)
+        if config.peft_type == PeftType.LAZY_LORA:
+            if config.inference_mode:
+                prompt_embeddings = model.prompt_encoder[adapter_name].embedding.weight
+            else:
+                prompt_embeddings = model.get_prompt_embedding_to_save(adapter_name)
+            to_return["prompt_embeddings"] = prompt_embeddings
 
     elif config.peft_type == PeftType.ADAPTION_PROMPT:
         to_return = {k: state_dict[k] for k in state_dict if k.split(".")[-1].startswith("adaption_")}
@@ -86,6 +93,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         model ([`PeftModel`]): The Peft model.
         peft_model_state_dict (`dict`): The state dict of the Peft model.
     """
+    import ipdb; ipdb.set_trace()
     config = model.peft_config[adapter_name]
     state_dict = {}
     if model.modules_to_save is not None:
@@ -98,7 +106,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
             state_dict[key] = value
     else:
         state_dict = peft_model_state_dict
-
+    import ipdb; ipdb.set_trace()
     if config.peft_type in (PeftType.LORA, PeftType.ADALORA, PeftType.LAZY_LORA): # NOTE
         peft_model_state_dict = {}
         for k, v in state_dict.items():
@@ -121,7 +129,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         peft_model_state_dict = state_dict
     else:
         raise NotImplementedError
-
+    import ipdb; ipdb.set_trace()
     model.load_state_dict(peft_model_state_dict, strict=False) # NOTE 把预训练好的adapter weight，赋值给model对应位置
     if isinstance(config, PromptLearningConfig):
         model.prompt_encoder[adapter_name].embedding.load_state_dict(

@@ -37,7 +37,7 @@ text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
 lr = 3e-2
-num_epochs = 50 # NOTE TODO, change this to 50 for the real peft
+num_epochs = 5 # NOTE TODO, change this to 50 for the real peft
 batch_size = 8
 
 
@@ -214,7 +214,7 @@ config_lazy_lora = LazyLoraConfig(
         r=8,
         lazy_lora_alpha=32,
         lazy_pre_lora_alpha=0.1, 
-        lazy_pre_adapter_type='none', #'linear',
+        lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
         target_modules=['query_key_value'],
         lazy_lora_dropout=0.05,
         bias='none',
@@ -261,7 +261,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 # training and evaluation
 model = model.to(device)
 
-is_train = True # False NOTE
+is_train = False # False NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
@@ -337,6 +337,7 @@ if is_train:
             print(tokenizer.batch_decode(outputs.detach().cpu().numpy(), 
                 skip_special_tokens=True))
 
+            break
 
 # In[16]:
 
@@ -379,6 +380,7 @@ if is_train:
             print(outputs)
             print(tokenizer.batch_decode(outputs.detach().cpu().numpy(), 
                 skip_special_tokens=True))
+            break
 
 eval_preds = []
 
@@ -400,6 +402,7 @@ for _, batch in enumerate(tqdm(eval_dataloader)):
         else:
             temp2.append(atemp)
     eval_preds.extend(temp2)
+    break
 
 correct = 0
 total = 0
