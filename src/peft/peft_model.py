@@ -185,6 +185,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         return model
 
     def _setup_prompt_encoder(self, adapter_name):
+        import ipdb; ipdb.set_trace()
         config = self.peft_config[adapter_name]
         self.prompt_encoder = torch.nn.ModuleDict({}) # NOTE, network
         self.prompt_tokens = {} # NOTE virtual tokens
@@ -207,11 +208,13 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 break
         import ipdb; ipdb.set_trace()
         if config.peft_type == PeftType.PROMPT_TUNING:
-            prompt_encoder = PromptEmbedding(config, self.word_embeddings)
+            prompt_encoder = PromptEmbedding(config, self.word_embeddings) 
         elif config.peft_type == PeftType.P_TUNING:
             prompt_encoder = PromptEncoder(config)
         elif config.peft_type == PeftType.PREFIX_TUNING:
             prompt_encoder = PrefixEncoder(config)
+        elif config.peft_type == PeftType.LAZY_LORA and config.prompt_tuning_config.peft_type == PeftType.PROMPT_TUNING:
+            prompt_encoder = PromptEmbedding(config.prompt_tuning_config, self.word_embeddings) # NOTE
         else:
             raise ValueError("Not supported")
         self.prompt_encoder.update(torch.nn.ModuleDict({adapter_name: prompt_encoder})) # NOTE 这是把刚才初始化好的prompt_encoder，放入self.prompt_encoder里面去！
@@ -685,7 +688,7 @@ class PeftModelForCausalLM(PeftModel):
         return_dict=None,
         **kwargs,
     ):
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         peft_config = self.active_peft_config
         if not isinstance(peft_config, PromptLearningConfig):
             return self.base_model(  # NOTE for LoRA, AdaLoRA, call base_model's forward func directly
