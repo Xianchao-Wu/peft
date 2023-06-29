@@ -116,6 +116,7 @@ def get_peft_model(model, peft_config):
         peft_config, PromptLearningConfig
     ):
         return PeftModel(model, peft_config)
+    import ipdb; ipdb.set_trace()
     if isinstance(peft_config, PromptLearningConfig):
         peft_config = _prepare_prompt_learning_config(peft_config, model_config) # NOTE
     import ipdb; ipdb.set_trace()

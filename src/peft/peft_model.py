@@ -146,7 +146,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             if peft_config.base_model_name_or_path is None:
                 peft_config.base_model_name_or_path = (
                     self.base_model.__dict__.get("name_or_path", None)
-                    if isinstance(peft_config, PromptLearningConfig)
+                    if isinstance(peft_config, PromptLearningConfig) # TODO
                     else self.base_model.model.__dict__.get("name_or_path", None)
                 )
             inference_mode = peft_config.inference_mode
@@ -182,6 +182,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         ) > 0:
             remove_hook_from_submodules(model)
 
+        import ipdb; ipdb.set_trace()
         if isinstance(config, PromptLearningConfig) and is_trainable:
             raise ValueError("Cannot set a prompt learning adapter to trainable when loading pretrained adapter.")
         else:
@@ -201,7 +202,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         self.prompt_tokens = {} # NOTE virtual tokens
         transformer_backbone = None
         for name, module in self.base_model.named_children(): # 'transformer' and 'lm_head'
-            if not config.peft_type == PeftType.LAZY_LORA:
+            if not config.peft_type == PeftType.LAZY_LORA: # lazy lora requires its lora adapter to be trainable, so we need to skip lazy lora here
                 for param in module.parameters():
                     param.requires_grad = False
             if isinstance(module, PreTrainedModel): # <class 'transformers.modeling_utils.PreTrainedModel'>
@@ -330,7 +331,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         Disables the adapter module.
         """
         try:
-            if isinstance(self.peft_config, PromptLearningConfig):
+            if isinstance(self.peft_config, PromptLearningConfig): # TODO 
                 old_forward = self.forward
                 self.forward = self.base_model.forward
             else:
@@ -356,12 +357,13 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 f"Found {self.peft_type} and {peft_config.peft_type}."
             )
         self.peft_config[adapter_name] = peft_config
+        import ipdb; ipdb.set_trace()
         if isinstance(peft_config, PromptLearningConfig):
-            self._setup_prompt_encoder(adapter_name) # NOTE, for prompt-learning, prefix-learning, p-tuning
+            self._setup_prompt_encoder(adapter_name) # NOTE, for prompt-learning, prefix-learning, p-tuning, lazy-lora
         else:
             self.base_model.add_adapter(adapter_name, peft_config) # for lora, adalora...
 
-        self.set_additional_trainable_modules(peft_config, adapter_name) # useless for prefix-tuning/prompt-tuning/p-tuning
+        self.set_additional_trainable_modules(peft_config, adapter_name) # useless for prefix-tuning/prompt-tuning/p-tuning/lazylora
 
     def set_additional_trainable_modules(self, peft_config, adapter_name):
         if getattr(peft_config, "modules_to_save", None) is not None:
@@ -440,7 +442,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 **dispatch_model_kwargs,
             )
             hook = AlignDevicesHook(io_same_device=True)
-            if isinstance(self.peft_config[adapter_name], PromptLearningConfig):
+            if isinstance(self.peft_config[adapter_name], PromptLearningConfig): # TODO
                 remove_hook_from_submodules(self.prompt_encoder)
             add_hook_to_module(self.get_base_model(), hook)
 
@@ -454,6 +456,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         if adapter_name not in self.peft_config:
             raise ValueError(f"Adapter {adapter_name} not found.")
         self.active_adapter = adapter_name
+        import ipdb; ipdb.set_trace()
         if not isinstance(self.peft_config[adapter_name], PromptLearningConfig):
             self.base_model.set_adapter(adapter_name)
         _set_adapter(self, adapter_name)
@@ -531,6 +534,7 @@ class PeftModelForSequenceClassification(PeftModel):
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         peft_config = self.active_peft_config
+        import ipdb; ipdb.set_trace()
         if not isinstance(peft_config, PromptLearningConfig):
             return self.base_model(
                 input_ids=input_ids,
@@ -703,7 +707,7 @@ class PeftModelForCausalLM(PeftModel):
         return_dict=None,
         **kwargs,
     ):
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         peft_config = self.active_peft_config
         if not isinstance(peft_config, PromptLearningConfig):
             return self.base_model(  # NOTE for LoRA, AdaLoRA, call base_model's forward func directly
@@ -764,9 +768,10 @@ class PeftModelForCausalLM(PeftModel):
         else:
             self.base_model.generation_config = self.generation_config
         try:
+            import ipdb; ipdb.set_trace()
             if not isinstance(peft_config, PromptLearningConfig):
                 outputs = self.base_model.generate(**kwargs)
-            else:
+            else: # include: lazy lora 
                 if "input_ids" not in kwargs:
                     raise ValueError("input_ids must be provided for Peft model generation")
                 # For gpt2 models, we construct postion_ids on the fly by using attention mask, and position ids need to match input_shape.
@@ -805,6 +810,7 @@ class PeftModelForCausalLM(PeftModel):
         import ipdb; ipdb.set_trace() # NOTE transformers/generation/utils.py里面的greedy_search，会回调这个方法的 TODO
         peft_config = self.active_peft_config
         model_kwargs = self.base_model_prepare_inputs_for_generation(*args, **kwargs)
+        import ipdb; ipdb.set_trace()
         if isinstance(peft_config, PromptLearningConfig):
             if peft_config.peft_type == PeftType.PREFIX_TUNING:
                 prefix_attention_mask = torch.ones(
@@ -903,6 +909,7 @@ class PeftModelForSeq2SeqLM(PeftModel):
         **kwargs,
     ):
         peft_config = self.active_peft_config
+        import ipdb; ipdb.set_trace()
         if not isinstance(peft_config, PromptLearningConfig):
             return self.base_model(
                 input_ids=input_ids,
@@ -990,6 +997,7 @@ class PeftModelForSeq2SeqLM(PeftModel):
             self._prepare_encoder_decoder_kwargs_for_generation
         )
         try:
+            import ipdb; ipdb.set_trace()
             if not isinstance(peft_config, PromptLearningConfig):
                 outputs = self.base_model.generate(**kwargs)
             else:
@@ -1115,7 +1123,7 @@ class PeftModelForTokenClassification(PeftModel):
     ):
         peft_config = self.active_peft_config
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
+        import ipdb; ipdb.set_trace()
         if not isinstance(peft_config, PromptLearningConfig):
             return self.base_model(
                 input_ids=input_ids,
