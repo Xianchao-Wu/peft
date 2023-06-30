@@ -29,7 +29,7 @@ from .tuners import (
     PromptEncoderConfig,
     PromptTuningConfig,
 )
-from .utils import PromptLearningConfig
+from .utils import PromptLearningConfig, PeftType
 
 
 MODEL_TYPE_TO_PEFT_MODEL_MAPPING = {
@@ -62,6 +62,7 @@ def get_peft_config(config_dict):
 
 
 def _prepare_prompt_learning_config(peft_config, model_config):
+    import ipdb; ipdb.set_trace()
     if peft_config.num_layers is None:
         if "num_hidden_layers" in model_config:
             num_layers = model_config["num_hidden_layers"]
@@ -96,9 +97,14 @@ def _prepare_prompt_learning_config(peft_config, model_config):
         else:
             raise ValueError("Please specify `num_attention_heads` in `peft_config`")
         peft_config.num_attention_heads = num_attention_heads
-
+    import ipdb; ipdb.set_trace()
     if getattr(peft_config, "encoder_hidden_size", None) is None:
         setattr(peft_config, "encoder_hidden_size", token_dim)
+    
+    if peft_config.peft_type == PeftType.LAZY_LORA:
+        if peft_config.prefix_tuning_config is not None:
+            if getattr(peft_config.prefix_tuning_config, "encoder_hidden_size", None) is None:
+                setattr(peft_config.prefix_tuning_config, "encoder_hidden_size", token_dim)
 
     return peft_config
 

@@ -25,6 +25,7 @@ import torch.nn.functional as F
 from transformers.pytorch_utils import Conv1D
 
 from .prompt_tuning import PromptTuningConfig
+from .prefix_tuning import PrefixTuningConfig
 
 from ..import_utils import is_bnb_4bit_available, is_bnb_available
 from ..utils import (
@@ -61,6 +62,7 @@ class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
             and saved in the final checkpoint.
 
         prompt_tuning_config (`PromptTuningConfig`): The config for prompt tuning
+        prefix_tuning_config (`PrefixTuningConfig`): The config for prefix tuning
 
     """
 
@@ -103,7 +105,13 @@ class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
     #--- for prompt learning
     prompt_tuning_config : PromptTuningConfig = field(
         default=None,
-        metadata={'help': 'config for prompt tuning'}
+        metadata={'help': 'config for prompt tuning in lazy lora'}
+    )
+
+    #--- for prefix learning
+    prefix_tuning_config : PrefixTuningConfig = field(
+        default=None,
+        metadata={'help': 'config for prefix tuning in lazy lora'}
     )
 
     def __post_init__(self):

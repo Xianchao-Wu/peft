@@ -208,19 +208,25 @@ peft_config_prompt_tuning = PromptTuningConfig(
 #None, num_attention_heads=None, num_layers=None, prompt_tuning_init=<PromptTuningInit.TEXT: 'TEXT'>, prompt_tuning_init
 #_text='Classify if the tweet is a complaint or not:', tokenizer_name_or_path='bigscience/bloomz-560m')
 
+peft_config_prefix_tuning = PrefixTuningConfig(
+    task_type=TaskType.CAUSAL_LM, 
+    num_virtual_tokens=30
+)
+
 
 import ipdb; ipdb.set_trace()
 config_lazy_lora = LazyLoraConfig(
-        r=8,
-        lazy_lora_alpha=32,
-        lazy_pre_lora_alpha=0.1, 
-        lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
-        target_modules=['query_key_value'],
-        lazy_lora_dropout=0.05,
-        bias='none',
-        task_type='CAUSAL_LM',
-        prompt_tuning_config=peft_config_prompt_tuning,
-        ) 
+    r=8,
+    lazy_lora_alpha=32,
+    lazy_pre_lora_alpha=0.1, 
+    lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
+    target_modules=['query_key_value'],
+    lazy_lora_dropout=0.05,
+    bias='none',
+    task_type='CAUSAL_LM',
+    prompt_tuning_config=peft_config_prompt_tuning,
+    prefix_tuning_config=peft_config_prefix_tuning,
+) 
 peft_config = config_lazy_lora
 
 model = get_peft_model(model, config_lazy_lora)
@@ -261,7 +267,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 # training and evaluation
 model = model.to(device)
 
-is_train = False # False NOTE
+is_train = True # False NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()

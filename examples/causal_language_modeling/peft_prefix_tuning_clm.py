@@ -35,7 +35,7 @@ text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
 lr = 3e-2
-num_epochs = 200 # NOTE TODO, change this to 50 for the real peft
+num_epochs = 5 # NOTE TODO, change this to 50 for the real peft
 batch_size = 8
 
 
@@ -270,7 +270,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 model = model.to(device)
 peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
-is_train = False # NOTE
+is_train = True # NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
