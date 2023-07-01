@@ -281,7 +281,7 @@ model = model.to(device)
 import ipdb; ipdb.set_trace()
 model.base_model.peft_config['default'].total_step = len(train_dataloader) * num_epochs
 
-is_train = True # False NOTE
+is_train = False # NOTE
 global_step = 0
 if is_train:
     for epoch in range(num_epochs):

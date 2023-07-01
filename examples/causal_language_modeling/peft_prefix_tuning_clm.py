@@ -270,7 +270,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 model = model.to(device)
 peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
 
-is_train = False # NOTE
+is_train = True # NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
