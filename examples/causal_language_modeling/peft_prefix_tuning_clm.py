@@ -35,7 +35,7 @@ text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
 lr = 3e-2
-num_epochs = 200 # NOTE TODO, change this to 50 for the real peft
+num_epochs = 5 # NOTE TODO, change this to 50 for the real peft
 batch_size = 8
 
 
