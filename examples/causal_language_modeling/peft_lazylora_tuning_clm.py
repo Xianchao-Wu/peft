@@ -267,7 +267,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 # training and evaluation
 model = model.to(device)
 
-is_train = True # False NOTE
+is_train = False # False NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()

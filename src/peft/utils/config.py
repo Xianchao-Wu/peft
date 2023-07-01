@@ -122,9 +122,17 @@ class PeftConfigMixin(PushToHubMixin):
                         if hasattr(temp, k):
                             setattr(temp, k, v)
                     value = temp
+                if key == 'prefix_tuning_config':
+                    # for lazy lora only
+                    from ..tuners.prefix_tuning import PrefixTuningConfig
+                    temp = PrefixTuningConfig()
+                    for k, v in value.items():
+                        if hasattr(temp, k):
+                            setattr(temp, k, v)
+                    value = temp
                 setattr(config, key, value) # NOTE TODO 很多内容，没有导入进来啊... why?
 
-        return config # PeftConfig(peft_type='PREFIX_TUNING', base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=True)
+        return config # PeftConfig(peft_type='PREFIX_TUNING', base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=True) # NOTE 初次只是为了知道base_model_name_or_path的，还会有二次调用本方法，得到完全的config配置
 
     @classmethod
     def from_json_file(cls, path_json_file, **kwargs):

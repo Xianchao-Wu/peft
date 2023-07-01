@@ -59,12 +59,27 @@ def get_peft_model_state_dict(model, state_dict=None, adapter_name="default"):
                 config.rank_pattern = rank_pattern
                 to_return = model.resize_state_dict_by_rank_pattern(rank_pattern, to_return, adapter_name)
         if config.peft_type == PeftType.LAZY_LORA:
+            import ipdb; ipdb.set_trace()
+            # --- 1 prompt tuning ---
+            adapter_name_pt = adapter_name + '_prompt_tuning'
+            prompt_embeddings = None
             if config.inference_mode:
-                prompt_embeddings = model.prompt_encoder[adapter_name].embedding.weight
+                if adapter_name_pt in model.prompt_encoder:
+                    prompt_embeddings = model.prompt_encoder[adapter_name_pt].embedding.weight
             else:
-                prompt_embeddings = model.get_prompt_embedding_to_save(adapter_name)
-            to_return["prompt_embeddings"] = prompt_embeddings
-
+                prompt_embeddings = model.get_prompt_embedding_to_save(adapter_name_pt)
+            if prompt_embeddings is not None:
+                to_return["prompt_embeddings"] = prompt_embeddings
+            # --- 2 prefix tuning ---
+            adapter_name_pt = adapter_name + '_prefix_tuning'
+            prrefix_embeddings = None
+            if config.inference_mode:
+                if adapter_name_pt in model.prompt_encoder:
+                    prefix_embeddings = model.prompt_encoder[adapter_name_pt].embedding.weight
+            else:
+                prefix_embeddings = model.get_prompt_embedding_to_save(adapter_name_pt)
+            if prefix_embeddings is not None:
+                to_return["prefix_embeddings"] = prefix_embeddings
     elif config.peft_type == PeftType.ADAPTION_PROMPT:
         to_return = {k: state_dict[k] for k in state_dict if k.split(".")[-1].startswith("adaption_")}
     elif isinstance(config, PromptLearningConfig):
@@ -131,7 +146,20 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         raise NotImplementedError
     import ipdb; ipdb.set_trace()
     model.load_state_dict(peft_model_state_dict, strict=False) # NOTE 把预训练好的adapter weight，赋值给model对应位置
-    if isinstance(config, PromptLearningConfig):
+    if config.peft_type == PeftType.LAZY_LORA:
+        # --- 1 prompt tuning ---
+        adapter_name_prompt = adapter_name + '_prompt_tuning'
+        if 'prompt_embeddings' in peft_model_state_dict:
+            model.prompt_encoder[adapter_name_prompt].embedding.load_state_dict(
+                {"weight": peft_model_state_dict["prompt_embeddings"]}, strict=True # NOTE
+            )
+        # --- 2 prefix tuning ---
+        adapter_name_prefix = adapter_name + '_prefix_tuning'
+        if 'prefix_embeddings' in peft_model_state_dict:
+            model.prompt_encoder[adapter_name_prefix].embedding.load_state_dict(
+                {"weight": peft_model_state_dict["prefix_embeddings"]}, strict=True # NOTE
+            )
+    elif isinstance(config, PromptLearningConfig):
         model.prompt_encoder[adapter_name].embedding.load_state_dict(
             {"weight": peft_model_state_dict["prompt_embeddings"]}, strict=True # NOTE
         )

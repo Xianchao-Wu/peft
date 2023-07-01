@@ -171,7 +171,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                       method (`./my_lora_config_directory/`).
         """
         from .mapping import MODEL_TYPE_TO_PEFT_MODEL_MAPPING, PEFT_TYPE_TO_CONFIG_MAPPING
-
+        import ipdb; ipdb.set_trace()
         # load the config
         config = PEFT_TYPE_TO_CONFIG_MAPPING[
             PeftConfig.from_pretrained(model_id, subfolder=kwargs.get("subfolder", None)).peft_type
@@ -286,7 +286,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         prompt_tokens = (
             self.prompt_tokens[adapter_name].unsqueeze(0).expand(1, -1).to(prompt_encoder.embedding.weight.device)
         )
-        if self.peft_config[adapter_name].peft_type == PeftType.PREFIX_TUNING:
+        if adapter_name in self.peft_config and self.peft_config[adapter_name].peft_type == PeftType.PREFIX_TUNING:
             prompt_tokens = prompt_tokens[:, : self.peft_config[adapter_name].num_virtual_tokens]
         prompt_embeddings = prompt_encoder(prompt_tokens) # NOTE 保存prompt_encoder和prompt_embeddings啥区别？目前prompt tuning上，一样的啊... TODO
         return prompt_embeddings[0].detach().cpu()
@@ -911,10 +911,13 @@ class PeftModelForCausalLM(PeftModel):
                 return self.base_model(inputs_embeds=inputs_embeds, **kwargs)
 
     def generate(self, **kwargs): # NOTE, dict_keys(['input_ids'=[8,64], 'attention_mask'=[8,64], 'max_new_tokens'=10, 'eos_token_id'=3]) ||| input_ids=[1,43], attention_mask=[1,43], max_new_tokens=10, eos_token_id=3
+        import ipdb; ipdb.set_trace()
         peft_config = self.active_peft_config
-        self.base_model.prepare_inputs_for_generation = self.prepare_inputs_for_generation
+        self.base_model.prepare_inputs_for_generation = self.prepare_inputs_for_generation # NOTE important!
         if hasattr(self.base_model, "model"):
             self.base_model.model.generation_config = self.generation_config
+            if peft_config.peft_type in [PeftType.LAZY_LORA]:
+                self.base_model.model.prepare_inputs_for_generation = self.prepare_inputs_for_generation # NOTE important! to ensure lazy lora uses prompt-tuning's prompt-embedding 
         else:
             self.base_model.generation_config = self.generation_config
         try:
@@ -929,7 +932,7 @@ class PeftModelForCausalLM(PeftModel):
                 # for prompt tuning input_ids is not passed but a concatenated input_embeds is passed. Thus attention_mask needs to be of same size of num_virtual_tokens + input_ids
                 if kwargs.get("attention_mask", None) is not None and peft_config.peft_type in [
                     PeftType.PROMPT_TUNING,
-                    PeftType.P_TUNING,
+                    PeftType.P_TUNING, # TODO why not include LAZY_LORA?
                 ]:
                     # concat prompt attention mask
                     prefix_attention_mask = torch.ones(
@@ -957,14 +960,26 @@ class PeftModelForCausalLM(PeftModel):
             return outputs
 
     def prepare_inputs_for_generation(self, *args, **kwargs):
-        import ipdb; ipdb.set_trace() # NOTE transformers/generation/utils.py里面的greedy_search，会回调这个方法的 TODO
+        #import ipdb; ipdb.set_trace() # NOTE transformers/generation/utils.py里面的greedy_search，会回调这个方法的 TODO
         peft_config = self.active_peft_config
         model_kwargs = self.base_model_prepare_inputs_for_generation(*args, **kwargs)
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if isinstance(peft_config, PromptLearningConfig):
             if peft_config.peft_type == PeftType.PREFIX_TUNING:
                 prefix_attention_mask = torch.ones(
                     model_kwargs["input_ids"].shape[0], peft_config.num_virtual_tokens
+                ).to(model_kwargs["input_ids"].device)
+                model_kwargs["attention_mask"] = torch.cat(
+                    (prefix_attention_mask, model_kwargs["attention_mask"]), dim=1
+                )
+            elif peft_config.peft_type == PeftType.LAZY_LORA:
+                num_virtual_tokens = 0
+                if peft_config.prompt_tuning_config is not None:
+                    num_virtual_tokens = peft_config.prompt_tuning_config.num_virtual_tokens
+                if peft_config.prefix_tuning_config is not None:
+                    num_virtual_tokens += peft_config.prefix_tuning_config.num_virtual_tokens
+                prefix_attention_mask = torch.ones(
+                    model_kwargs["input_ids"].shape[0], num_virtual_tokens
                 ).to(model_kwargs["input_ids"].device)
                 model_kwargs["attention_mask"] = torch.cat(
                     (prefix_attention_mask, model_kwargs["attention_mask"]), dim=1
@@ -993,10 +1008,17 @@ class PeftModelForCausalLM(PeftModel):
                 if model_kwargs["past_key_values"] is None: # NOTE for prompt tuning
                     inputs_embeds = self.word_embeddings(model_kwargs["input_ids"]) # torch.Size([1, 43, 1024])
                     prompts = self.get_prompt(batch_size=model_kwargs["input_ids"].shape[0]) # NOTE, torch.Size([1, 8, 1024])
-                    prompts = prompts.to(inputs_embeds.dtype) 
-                    model_kwargs["inputs_embeds"] = torch.cat((prompts, inputs_embeds), dim=1) # [1,8,1024] + [1,43,1024] -> torch.Size([1, 51, 1024])
-                    model_kwargs["input_ids"] = None
-
+                    if isinstance(prompts, tuple):
+                        prompts_in, past_key_values = prompts
+                        prompts_in = prompts_in.to(inputs_embeds.dtype)
+                        model_kwargs["inputs_embeds"] = torch.cat((prompts_in, inputs_embeds), dim=1) 
+                        model_kwargs["input_ids"] = None
+                        model_kwargs["past_key_values"] = past_key_values
+                    else:
+                        prompts = prompts.to(inputs_embeds.dtype) 
+                        model_kwargs["inputs_embeds"] = torch.cat((prompts, inputs_embeds), dim=1) # [1,8,1024] + [1,43,1024] -> torch.Size([1, 51, 1024])
+                        model_kwargs["input_ids"] = None
+        #import ipdb; ipdb.set_trace()
         return model_kwargs
 
 
@@ -1182,6 +1204,7 @@ class PeftModelForSeq2SeqLM(PeftModel):
             return outputs
 
     def prepare_inputs_for_generation(self, *args, **kwargs):
+        import ipdb; ipdb.set_trace()
         peft_config = self.active_peft_config
         model_kwargs = self.base_model_prepare_inputs_for_generation(*args, **kwargs)
         if model_kwargs["past_key_values"] is None and peft_config.peft_type == PeftType.PREFIX_TUNING:
