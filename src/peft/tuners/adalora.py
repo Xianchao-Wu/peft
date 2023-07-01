@@ -235,7 +235,7 @@ class AdaLoraModel(LoraModel):
         return outputs
 
     def resize_modules_by_rank_pattern(self, rank_pattern, adapter_name):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         lora_config = self.peft_config[adapter_name]
         for name, rank_idx in rank_pattern.items():
             if isinstance(rank_idx, list):
@@ -267,7 +267,7 @@ class AdaLoraModel(LoraModel):
                     target.ranknum[adapter_name].copy_(ranknum)
 
     def resize_state_dict_by_rank_pattern(self, rank_pattern, state_dict, adapter_name):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         for name, rank_idx in rank_pattern.items():
             rank = sum(rank_idx) # e.g., rank_idx=[False, False, False, False, False, True, False, False, False, False, False, False]
             print('resize_state_by_rank_pattern: rank_idx={}, rank={}'.format(rank_idx, rank))

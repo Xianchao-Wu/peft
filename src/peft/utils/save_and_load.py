@@ -27,7 +27,7 @@ def get_peft_model_state_dict(model, state_dict=None, adapter_name="default"):
             The state dict of the model. If not provided, the state dict of the model
         will be used.
     """
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     config = model.peft_config[adapter_name]
     if state_dict is None:
         state_dict = model.state_dict()
@@ -52,14 +52,14 @@ def get_peft_model_state_dict(model, state_dict=None, adapter_name="default"):
             raise NotImplementedError
         to_return = {k: v for k, v in to_return.items() if (("lora_" in k and adapter_name in k) or ("bias" in k))}
         if config.peft_type == PeftType.ADALORA:
-            import ipdb; ipdb.set_trace()
+            #import ipdb; ipdb.set_trace()
             rank_pattern = config.rank_pattern
             if rank_pattern is not None: # NOTE TODO why not in? -> okay now, 需要在train的时候，调用model.base_model.update_and_allocate(global_step) 方法!
                 rank_pattern = {k.replace(f".{adapter_name}", ""): v for k, v in rank_pattern.items()}
                 config.rank_pattern = rank_pattern
                 to_return = model.resize_state_dict_by_rank_pattern(rank_pattern, to_return, adapter_name)
         if config.peft_type == PeftType.LAZY_LORA:
-            import ipdb; ipdb.set_trace()
+            #import ipdb; ipdb.set_trace()
             # --- 1 prompt tuning ---
             adapter_name_pt = adapter_name + '_prompt_tuning'
             prompt_embeddings = None
@@ -108,7 +108,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         model ([`PeftModel`]): The Peft model.
         peft_model_state_dict (`dict`): The state dict of the Peft model.
     """
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     config = model.peft_config[adapter_name]
     state_dict = {}
     if model.modules_to_save is not None:
@@ -121,7 +121,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
             state_dict[key] = value
     else:
         state_dict = peft_model_state_dict
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     if config.peft_type in (PeftType.LORA, PeftType.ADALORA, PeftType.LAZY_LORA): # NOTE
         peft_model_state_dict = {}
         for k, v in state_dict.items():
@@ -136,7 +136,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
             else:
                 peft_model_state_dict[k] = v
         if config.peft_type == PeftType.ADALORA:
-            import ipdb; ipdb.set_trace()
+            #import ipdb; ipdb.set_trace()
             rank_pattern = config.rank_pattern
             if rank_pattern is not None:
                 model.resize_modules_by_rank_pattern(rank_pattern, adapter_name) # NOTE important
@@ -144,7 +144,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         peft_model_state_dict = state_dict
     else:
         raise NotImplementedError
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     model.load_state_dict(peft_model_state_dict, strict=False) # NOTE 把预训练好的adapter weight，赋值给model对应位置
     if config.peft_type == PeftType.LAZY_LORA:
         # --- 1 prompt tuning ---

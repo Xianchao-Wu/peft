@@ -82,7 +82,7 @@ class PrefixEncoder(torch.nn.Module):
     Output shape: (`batch_size`, `num_virtual_tokens`, `2*layers*hidden`)
     """
     def __init__(self, config): # PrefixTuningConfig(peft_type=<PeftType.PREFIX_TUNING: 'PREFIX_TUNING'>, base_model_name_or_path='bigscience/bloomz-560m', task_type=<TaskType.CAUSAL_LM: 'CAUSAL_LM'>, inference_mode=False, num_virtual_tokens=30, token_dim=1024, num_transformer_submodules=1, num_attention_heads=16, num_layers=24, encoder_hidden_size=1024, prefix_projection=False)
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         super().__init__()
         self.prefix_projection = config.prefix_projection # False
         token_dim = config.token_dim # 1024
