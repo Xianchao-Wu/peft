@@ -641,7 +641,7 @@ class Linear(nn.Linear, LazyLoraLayer):
         self.active_adapter = adapter_name # 'default'
 
     def merge(self):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if self.active_adapter not in self.lazy_lora_A.keys():
             return
         if self.merged:
@@ -658,7 +658,7 @@ class Linear(nn.Linear, LazyLoraLayer):
             self.merged = True
 
     def unmerge(self):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if self.active_adapter not in self.lazy_lora_A.keys():
             return
         if not self.merged:
@@ -773,7 +773,7 @@ class Embedding(nn.Embedding, LazyLoraLayer):
             self.merged = True
 
     def forward(self, x: torch.Tensor):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if self.disable_adapters:
             if self.r[self.active.adapter] > 0 and self.merged:
                 self.weight.data -= (
@@ -838,7 +838,7 @@ if is_bnb_available():
             self.active_adapter = adapter_name
 
         def forward(self, x: torch.Tensor):
-            import ipdb; ipdb.set_trace()
+            #import ipdb; ipdb.set_trace()
             result = super().forward(x)
 
             if self.disable_adapters or self.active_adapter not in self.lazy_lora_A.keys():
@@ -898,7 +898,7 @@ if is_bnb_available():
                 self.active_adapter = adapter_name
 
             def forward(self, x: torch.Tensor):
-                import ipdb; ipdb.set_trace()
+                #import ipdb; ipdb.set_trace()
                 result = super().forward(x)
 
                 if self.disable_adapters or self.active_adapter not in self.lazy_lora_A.keys():

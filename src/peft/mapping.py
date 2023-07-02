@@ -62,7 +62,7 @@ def get_peft_config(config_dict):
 
 
 def _prepare_prompt_learning_config(peft_config, model_config):
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     if peft_config.num_layers is None:
         if "num_hidden_layers" in model_config:
             num_layers = model_config["num_hidden_layers"]
@@ -97,7 +97,7 @@ def _prepare_prompt_learning_config(peft_config, model_config):
         else:
             raise ValueError("Please specify `num_attention_heads` in `peft_config`")
         peft_config.num_attention_heads = num_attention_heads
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     if getattr(peft_config, "encoder_hidden_size", None) is None:
         setattr(peft_config, "encoder_hidden_size", token_dim)
     
@@ -122,10 +122,10 @@ def get_peft_model(model, peft_config):
         peft_config, PromptLearningConfig
     ):
         return PeftModel(model, peft_config)
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     if isinstance(peft_config, PromptLearningConfig):
         peft_config = _prepare_prompt_learning_config(peft_config, model_config) # NOTE
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     return MODEL_TYPE_TO_PEFT_MODEL_MAPPING[peft_config.task_type](model, peft_config)
     # CAUSAL_LM -> peft.peft_model.PeftModelForCausalLM
     # 动态根据peft 模型的，nlp任务的类型，来找到对应的class，然后传入model和peft的配置，来初始化peft model的对象
