@@ -178,7 +178,7 @@ class LazyLoraModel(torch.nn.Module):
     """
 
     def __init__(self, model, config, adapter_name):
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         super().__init__()
         self.model = model
         self.forward = self.model.forward
@@ -876,7 +876,9 @@ if is_bnb_available():
                 out_features,
                 r: int = 0,
                 lazy_lora_alpha: int = 1,
+                lazy_pre_lora_alpha : float = 0.1, 
                 lazy_lora_dropout: float = 0.0,
+                lazy_pre_adapter_type: str = 'linear', # 'none', 'linear', or 'conv1d'
                 **kwargs,
             ):
                 bnb.nn.Linear4bit.__init__(
@@ -894,12 +896,36 @@ if is_bnb_available():
                 self.weight.requires_grad = False
 
                 init_lazy_lora_weights = kwargs.pop("init_lazy_lora_weights", True)
-                self.update_layer(adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights)
+                self.update_layer(adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights, lazy_pre_lora_alpha, lazy_pre_adapter_type)
                 self.active_adapter = adapter_name
 
             def forward(self, x: torch.Tensor):
                 #import ipdb; ipdb.set_trace()
-                result = super().forward(x)
+                # --- llama adapter, pre ---
+                if self.r[self.active_adapter] > 0:
+                    debug_conv1d = (self.lazy_pre_adapter_type == 'conv1d')
+                    if debug_conv1d and (self.active_adapter in self.lazy_pre_lora_A):
+                        x = x.transpose(1,2)
+                        x = self.pre_scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
+                            self.lazy_pre_lora_dropout[self.active_adapter](
+                                self.lazy_pre_lora_A[self.active_adapter](x)
+                            ) # A -> dropout -> B
+                        ) + x
+                        x = x.transpose(1, 2).contiguous()
+
+                    debug_linear = (self.lazy_pre_adapter_type == 'linear')
+                    if debug_linear and (self.active_adapter in self.lazy_pre_lora_A):
+                        #import ipdb; ipdb.set_trace() # NOTE 
+                        previous_dtype = x.dtype
+                        x = x.to(self.lazy_pre_lora_A[self.active_adapter].weight.dtype)
+                        x = self.pre_scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
+                            self.lazy_pre_lora_A[self.active_adapter](
+                                self.lazy_pre_lora_dropout[self.active_adapter](x)
+                            ) # dropout -> A -> B
+                        ) + x
+                        x = x.to(previous_dtype)
+
+                result = super().forward(x) # TODO why? > /usr/local/lib/python3.8/dist-packages/bitsandbytes/nn/modules.py(207)forward()
 
                 if self.disable_adapters or self.active_adapter not in self.lazy_lora_A.keys():
                     return result
@@ -910,16 +936,21 @@ if is_bnb_available():
                         x = x.to(self.lazy_lora_A[self.active_adapter].weight.dtype)
                         output = (
                             self.lazy_lora_B[self.active_adapter](
-                                self.lazy_lora_A[self.active_adapter](self.lazy_lora_dropout[self.active_adapter](x))
+                                self.lazy_lora_A[self.active_adapter](
+                                    self.lazy_lora_dropout[self.active_adapter](x)
+                                )
                             ).to(expected_dtype)
                             * self.scaling[self.active_adapter]
                         )
                     else:
                         output = (
                             self.lazy_lora_B[self.active_adapter](
-                                self.lazy_lora_A[self.active_adapter](self.lazy_lora_dropout[self.active_adapter](x))
+                                self.lazy_lora_A[self.active_adapter](
+                                    self.lazy_lora_dropout[self.active_adapter](x)
+                                )
                             )
                             * self.scaling[self.active_adapter]
                         )
                     result += output
                 return result
+
