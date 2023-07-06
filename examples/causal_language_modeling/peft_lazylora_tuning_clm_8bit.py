@@ -36,9 +36,9 @@ dataset_name = "twitter_complaints"
 text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
-lr = 3e-8
-num_epochs = 1 # NOTE TODO, change this to 50 for the real peft
-batch_size = 64 
+lr = 3e-2
+num_epochs = 5 # NOTE TODO, change this to 50 for the real peft
+batch_size = 8
 
 
 # In[3]:
@@ -195,7 +195,7 @@ import ipdb; ipdb.set_trace()
 from transformers import BitsAndBytesConfig
 
 bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True,
+    load_in_8bit=True,
     #bnb_4bit_use_double_quant=True,
     #bnb_4bit_quant_type='nf4',
     #bnb_4bit_compute_dtype=torch.bfloat16

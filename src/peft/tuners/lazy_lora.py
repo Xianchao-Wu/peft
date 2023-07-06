@@ -178,7 +178,7 @@ class LazyLoraModel(torch.nn.Module):
     """
 
     def __init__(self, model, config, adapter_name):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         super().__init__()
         self.model = model
         self.forward = self.model.forward
@@ -816,7 +816,9 @@ if is_bnb_available():
             out_features, # 4096
             r: int = 0, # 8
             lazy_lora_alpha: int = 1, # 16
+            lazy_pre_lora_alpha: float = 0.1,
             lazy_lora_dropout: float = 0.0, # 0.05
+            lazy_pre_adapter_type: str = 'linear', # 'none', 'linear', or, 'conv1d'
             **kwargs, # {'bias': False, 'fan_in_fan_out': False, 'init_lazy_lora_weights': True, 'has_fp16_weights': False, 'memory_efficient_backward': False, 'threshold': 6.0, 'index': None}
         ):
             bnb.nn.Linear8bitLt.__init__(
@@ -834,11 +836,34 @@ if is_bnb_available():
             # Freezing the pre-trained weight matrix
             self.weight.requires_grad = False
             init_lazy_lora_weights = kwargs.pop("init_lazy_lora_weights", True)
-            self.update_layer(adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights) # NOTE
+            self.update_layer(adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights, lazy_pre_lora_alpha, lazy_pre_adapter_type) # NOTE
             self.active_adapter = adapter_name
 
         def forward(self, x: torch.Tensor):
             #import ipdb; ipdb.set_trace()
+            debug = True
+            if debug and self.r[self.active_adapter] > 0:
+                debug_conv1d = (self.lazy_pre_adapter_type == 'conv1d')
+                if debug_conv1d and (self.active_adapter in self.lazy_pre_lora_A):
+                    x = x.transpose(1, 2)
+                    x = self.pre_scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
+                        self.lazy_pre_lora_dropout[self.active_adapter](
+                            self.lazy_pre_lora_A[self.active_adapter](x)
+                        ) # A -> dropout -> B
+                    ) + x
+                    x = x.transpose(1, 2).contiguous()
+
+                debug_linear = (self.lazy_pre_adapter_type == 'linear')
+                if debug_linear and (self.active_adapter in self.lazy_pre_lora_A):
+                    previous_dtype = x.dtype
+                    x = x.to(self.lazy_pre_lora_A[self.active_adapter].weight.dtype)
+                    x = self.pre_scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
+                        self.lazy_pre_lora_A[self.active_adapter](
+                            self.lazy_pre_lora_dropout[self.active_adapter](x)
+                        ) # dropout -> A -> B
+                    ) + x
+                    x = x.to(previous_dtype)
+
             result = super().forward(x)
 
             if self.disable_adapters or self.active_adapter not in self.lazy_lora_A.keys():

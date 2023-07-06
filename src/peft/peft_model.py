@@ -648,7 +648,7 @@ class PeftModelForSequenceClassification(PeftModel):
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         peft_config = self.active_peft_config
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if not isinstance(peft_config, PromptLearningConfig):
             return self.base_model(
                 input_ids=input_ids,
@@ -1007,7 +1007,7 @@ class PeftModelForCausalLM(PeftModel):
             else:
                 if model_kwargs["past_key_values"] is None: # NOTE for prompt tuning
                     inputs_embeds = self.word_embeddings(model_kwargs["input_ids"]) # torch.Size([1, 43, 1024])
-                    prompts = self.get_prompt(batch_size=model_kwargs["input_ids"].shape[0]) # NOTE, torch.Size([1, 8, 1024])
+                    prompts = self.get_prompt(batch_size=model_kwargs["input_ids"].shape[0], in_dtype=inputs_embeds.dtype) # NOTE, torch.Size([1, 8, 1024])
                     if isinstance(prompts, tuple):
                         prompts_in, past_key_values = prompts
                         prompts_in = prompts_in.to(inputs_embeds.dtype)
@@ -1081,7 +1081,7 @@ class PeftModelForSeq2SeqLM(PeftModel):
         **kwargs,
     ):
         peft_config = self.active_peft_config
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if not isinstance(peft_config, PromptLearningConfig):
             return self.base_model(
                 input_ids=input_ids,
@@ -1296,7 +1296,7 @@ class PeftModelForTokenClassification(PeftModel):
     ):
         peft_config = self.active_peft_config
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if not isinstance(peft_config, PromptLearningConfig):
             return self.base_model(
                 input_ids=input_ids,
