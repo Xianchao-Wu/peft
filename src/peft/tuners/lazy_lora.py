@@ -42,6 +42,7 @@ from ..utils import (
 
 if is_bnb_available():
     import bitsandbytes as bnb
+    import bitsandbytes.functional as Fbnb
 
 
 @dataclass
@@ -66,7 +67,7 @@ class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
 
     """
 
-    r: int = field(default=8, metadata={"help": "Lazy Lora attention dimension"})
+    r: int = field(default=8, metadata={"help": "Lazy Lora attention dimension, can be fixed or dynamically determined by singular values of weight matrices"})
     target_modules: Optional[Union[List[str], str]] = field(
         default=None,
         metadata={
@@ -80,6 +81,10 @@ class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
     fan_in_fan_out: bool = field(
         default=False,
         metadata={"help": "Set this to True if the layer to replace stores weight like (fan_in, fan_out)"},
+    )
+    is_r_by_svd: bool = field(
+        default=False,
+        metadata={"help": "if True, then use singular value to determine rank r and averaged rank budget is still determined by the given r"},
     )
     bias: str = field(
         default="none", 
@@ -199,7 +204,56 @@ class LazyLoraModel(torch.nn.Module):
         if self.peft_config[adapter_name].inference_mode:
             _freeze_adapter(self.model, adapter_name)
 
+    def _svd_s_sum(self, weight):
+        _, si, _ = torch.svd(weight.to(torch.float32))
+        return sum(si).item()
+
+    def _find_rank_by_svd(self, key_list, lazy_lora_config, loaded_in_4bit, loaded_in_8bit):
+        import ipdb; ipdb.set_trace()
+        key_to_rank_dict = dict()
+        for key in key_list:
+            if isinstance(lazy_lora_config.target_modules, str):
+                target_module_found = re.fullmatch(lazy_lora_config.target_modules, key)
+            else:
+                target_module_found = any(key.endswith(target_key) for target_key in lazy_lora_config.target_modules)
+            if target_module_found:
+                #import ipdb; ipdb.set_trace()
+                parent, target, target_name = _get_submodules(self.model, key)
+                if loaded_in_4bit:
+                    if self.model.config.quantization_config.bnb_4bit_quant_type == 'fp4':
+                        weight = Fbnb.dequantize_fp4(target.weight, target.weight.quant_state)
+                        s_value_sum = self._svd_s_sum(weight)
+                        key_to_rank_dict[key] = s_value_sum
+                elif loaded_in_8bit:
+                    # TODO need to confirm if this is okay?
+                    weight = target.weight
+                    s_value_sum = self._svd_s_sum(weight)
+                    key_to_rank_dict[key] = s_value_sum
+                else:
+                    weight = target.weight
+                    s_value_sum = self._svd_s_sum(weight)
+                    key_to_rank_dict[key] = s_value_sum
+
+        #import ipdb; ipdb.set_trace()
+        #print(key_to_rank_dict)
+        budget = lazy_lora_config.r * lazy_lora_config.num_layers
+        if isinstance(lazy_lora_config.target_modules, list):
+            budget = budget * len(lazy_lora_config.target_modules)
+        target_keys = lazy_lora_config.target_modules
+        if isinstance(target_keys, str):
+            target_keys = [target_keys]
+        for target_key in target_keys:
+            a_key_list = [akey for akey in key_to_rank_dict.keys() if akey.endswith(target_key)]
+            s_value_total = sum([key_to_rank_dict[akey] for akey in a_key_list])
+
+            for akey in a_key_list:
+                key_to_rank_dict[akey] = round(budget * key_to_rank_dict[akey]/s_value_total)
+        #import ipdb; ipdb.set_trace()
+        #print(key_to_rank_dict)
+        return key_to_rank_dict
+
     def _find_and_replace(self, adapter_name):
+        #import ipdb; ipdb.set_trace()
         lazy_lora_config = self.peft_config[adapter_name]
         loaded_in_4bit = getattr(self.model, "is_loaded_in_4bit", False)
         loaded_in_8bit = getattr(self.model, "is_loaded_in_8bit", False)
@@ -219,22 +273,31 @@ class LazyLoraModel(torch.nn.Module):
             "lazy_pre_adapter_type": lazy_lora_config.lazy_pre_adapter_type # 'linear', 'conv1d', or 'none'
         }
         key_list = [key for key, _ in self.model.named_modules()]
+        key_to_rank_dict = None
+        if lazy_lora_config.is_r_by_svd:
+            key_to_rank_dict = self._find_rank_by_svd(
+                key_list, 
+                lazy_lora_config,
+                loaded_in_4bit,
+                loaded_in_8bit,
+            )
         for key in key_list:
             if isinstance(lazy_lora_config.target_modules, str):
                 target_module_found = re.fullmatch(lazy_lora_config.target_modules, key)
             else:
                 target_module_found = any(key.endswith(target_key) for target_key in lazy_lora_config.target_modules)
             if target_module_found:
+                #import ipdb; ipdb.set_trace()
                 if not is_target_modules_in_base_model:
                     is_target_modules_in_base_model = True
-                parent, target, target_name = _get_submodules(self.model, key) # NOTE
+                parent, target, target_name = _get_submodules(self.model, key) # NOTE e.g., key='transformer.h.0.self_attention.query_key_value'
                 if hasattr(target, "bias"):
                     bias = target.bias is not None # bias=True
 
                 if isinstance(target, LazyLoraLayer):
                     target.update_layer(
                         adapter_name,
-                        lazy_lora_config.r,
+                        lazy_lora_config.r if (key_to_rank_dict == None or key not in key_to_rank_dict) else key_to_rank_dict[key],
                         lazy_lora_config.lazy_lora_alpha,
                         lazy_lora_config.lazy_lora_dropout,
                         lazy_lora_config.init_lazy_lora_weights,
@@ -243,6 +306,7 @@ class LazyLoraModel(torch.nn.Module):
                     )
                 else:
                     if loaded_in_8bit and isinstance(target, bnb.nn.Linear8bitLt): # NOTE
+                        kwargs['r'] = lazy_lora_config.r if (key_to_rank_dict == None or key not in key_to_rank_dict) else key_to_rank_dict[key]
                         eightbit_kwargs = kwargs.copy()
                         eightbit_kwargs.update(
                             {
@@ -256,6 +320,7 @@ class LazyLoraModel(torch.nn.Module):
                             adapter_name, target.in_features, target.out_features, bias=bias, **eightbit_kwargs
                         ) # NOTE case 1
                     elif loaded_in_4bit and is_bnb_4bit_available() and isinstance(target, bnb.nn.Linear4bit):
+                        kwargs['r'] = lazy_lora_config.r if (key_to_rank_dict == None or key not in key_to_rank_dict) else key_to_rank_dict[key]
                         fourbit_kwargs = kwargs.copy()
                         fourbit_kwargs.update(
                             {
@@ -273,6 +338,7 @@ class LazyLoraModel(torch.nn.Module):
                         in_features, out_features = target.num_embeddings, target.embedding_dim
                         new_module = Embedding(adapter_name, in_features, out_features, **embedding_kwargs)
                     else:
+                        kwargs['r'] = lazy_lora_config.r if (key_to_rank_dict == None or key not in key_to_rank_dict) else key_to_rank_dict[key]
                         if isinstance(target, torch.nn.Linear): # NOTE linear layer, qkv
                             in_features, out_features = target.in_features, target.out_features # e.g., 1024, 3072
                             if kwargs["fan_in_fan_out"]:
@@ -841,8 +907,8 @@ if is_bnb_available():
 
         def forward(self, x: torch.Tensor):
             #import ipdb; ipdb.set_trace()
-            debug = True
-            if debug and self.r[self.active_adapter] > 0:
+            #debug = True
+            if self.r[self.active_adapter] > 0:
                 debug_conv1d = (self.lazy_pre_adapter_type == 'conv1d')
                 if debug_conv1d and (self.active_adapter in self.lazy_pre_lora_A):
                     x = x.transpose(1, 2)
@@ -863,7 +929,7 @@ if is_bnb_available():
                         ) # dropout -> A -> B
                     ) + x
                     x = x.to(previous_dtype)
-
+            #import ipdb; ipdb.set_trace()
             result = super().forward(x)
 
             if self.disable_adapters or self.active_adapter not in self.lazy_lora_A.keys():
@@ -949,8 +1015,8 @@ if is_bnb_available():
                             ) # dropout -> A -> B
                         ) + x
                         x = x.to(previous_dtype)
-
-                result = super().forward(x) # TODO why? > /usr/local/lib/python3.8/dist-packages/bitsandbytes/nn/modules.py(207)forward()
+                #import ipdb; ipdb.set_trace()
+                result = super().forward(x) # why? > /usr/local/lib/python3.8/dist-packages/bitsandbytes/nn/modules.py(207)forward()
 
                 if self.disable_adapters or self.active_adapter not in self.lazy_lora_A.keys():
                     return result

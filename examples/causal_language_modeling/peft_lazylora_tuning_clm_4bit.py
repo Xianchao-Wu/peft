@@ -36,8 +36,8 @@ dataset_name = "twitter_complaints"
 text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
-lr = 3e-8
-num_epochs = 1 # NOTE TODO, change this to 50 for the real peft
+lr = 3e-5
+num_epochs = 5 # NOTE TODO, change this to 50 for the real peft
 batch_size = 64 
 
 
@@ -228,6 +228,7 @@ peft_config_prefix_tuning = PrefixTuningConfig(
 import ipdb; ipdb.set_trace()
 config_lazy_lora = LazyLoraConfig(
     r=8,
+    is_r_by_svd=True, # use svd singular value to determine rank r, dynamically NOTE
     lazy_lora_alpha=32,
     lazy_pre_lora_alpha=0.1, 
     lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
@@ -248,7 +249,7 @@ model.print_trainable_parameters()
 
 # trainable params: 786432 || all params: 560001024 || trainable%: 0.14043402892063284, yes for LoRA
 # trainable params: 1277952 || all params: 560492544 || trainable%: 0.228005173963563, yes for lazy lora, with two conv1d layers now! NOTE
-
+# trainable params: 2668544 || all params: 410888192 || trainable%: 0.6494574562999367 # with prompt learning + lazy lora + r_by_svd NOTE
 # In[10]:
 #model.print_trainable_parameters()
 
@@ -323,7 +324,7 @@ if is_train:
 
     import ipdb; ipdb.set_trace()
     # saving model
-    peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}" # 'bigscience/bloomz-560m_LAZY_LORA_CAUSAL_LM_epoch500' NOTE
+    peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}_4bit" # 'bigscience/bloomz-560m_LAZY_LORA_CAUSAL_LM_epoch500' NOTE
     model.save_pretrained(peft_model_id)
     ckpt = f"{peft_model_id}/adapter_model.bin"
     #get_ipython().system('du -h $ckpt')
@@ -363,10 +364,12 @@ if is_train:
 from peft import PeftModel, PeftConfig
 
 import ipdb; ipdb.set_trace()
-peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
+peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}_4bit"
 
 config = PeftConfig.from_pretrained(peft_model_id)
 model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path,
+        quantization_config=bnb_config,
+        device_map={"":0},
         cache_dir=cache_dir)
 model = PeftModel.from_pretrained(model, peft_model_id)
 
