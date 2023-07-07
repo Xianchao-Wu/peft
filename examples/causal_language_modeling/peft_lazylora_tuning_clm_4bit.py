@@ -196,9 +196,9 @@ from transformers import BitsAndBytesConfig
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
-    #bnb_4bit_use_double_quant=True,
-    #bnb_4bit_quant_type='nf4',
-    #bnb_4bit_compute_dtype=torch.bfloat16
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type='nf4',
+    bnb_4bit_compute_dtype=torch.bfloat16
 )
 
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
@@ -232,7 +232,7 @@ config_lazy_lora = LazyLoraConfig(
     lazy_lora_alpha=32,
     lazy_pre_lora_alpha=0.1, 
     lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
-    target_modules=['query_key_value'],
+    target_modules=['query_key_value', 'dense_h_to_4h', 'dense_4h_to_h'],
     lazy_lora_dropout=0.05,
     bias='none',
     task_type='CAUSAL_LM',
@@ -253,6 +253,7 @@ model.print_trainable_parameters()
 # In[10]:
 #model.print_trainable_parameters()
 
+# trainable params: 16825344 || all params: 425044992 || trainable%: 3.9584854113514645 # for 'query_key_value', 'dense_h_to_4h', 'dense_4h_to_h' -> three linear layers
 
 # In[ ]:
 import ipdb; ipdb.set_trace()

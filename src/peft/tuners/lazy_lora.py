@@ -209,7 +209,7 @@ class LazyLoraModel(torch.nn.Module):
         return sum(si).item()
 
     def _find_rank_by_svd(self, key_list, lazy_lora_config, loaded_in_4bit, loaded_in_8bit):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         key_to_rank_dict = dict()
         for key in key_list:
             if isinstance(lazy_lora_config.target_modules, str):
@@ -224,6 +224,13 @@ class LazyLoraModel(torch.nn.Module):
                         weight = Fbnb.dequantize_fp4(target.weight, target.weight.quant_state)
                         s_value_sum = self._svd_s_sum(weight)
                         key_to_rank_dict[key] = s_value_sum
+                    elif self.model.config.quantization_config.bnb_4bit_quant_type == 'nf4':
+                        weight = Fbnb.dequantize_nf4(target.weight, target.weight.quant_state)
+                        s_value_sum = self._svd_s_sum(weight)
+                        key_to_rank_dict[key] = s_value_sum
+                    else:
+                        raise ValueError('only {fp4, nf4} are supported for bnb_4bit_quant_type, given={}'.format(self.model.config.quantization_config.bnb_4bit_quant_type))
+
                 elif loaded_in_8bit:
                     # TODO need to confirm if this is okay?
                     weight = target.weight
@@ -237,8 +244,8 @@ class LazyLoraModel(torch.nn.Module):
         #import ipdb; ipdb.set_trace()
         #print(key_to_rank_dict)
         budget = lazy_lora_config.r * lazy_lora_config.num_layers
-        if isinstance(lazy_lora_config.target_modules, list):
-            budget = budget * len(lazy_lora_config.target_modules)
+        #if isinstance(lazy_lora_config.target_modules, list):
+        #    budget = budget * len(lazy_lora_config.target_modules)
         target_keys = lazy_lora_config.target_modules
         if isinstance(target_keys, str):
             target_keys = [target_keys]
@@ -249,7 +256,7 @@ class LazyLoraModel(torch.nn.Module):
             for akey in a_key_list:
                 key_to_rank_dict[akey] = round(budget * key_to_rank_dict[akey]/s_value_total)
         #import ipdb; ipdb.set_trace()
-        #print(key_to_rank_dict)
+        print(key_to_rank_dict)
         return key_to_rank_dict
 
     def _find_and_replace(self, adapter_name):
