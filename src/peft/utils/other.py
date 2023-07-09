@@ -42,6 +42,8 @@ def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True):
     Args:
         model, (`transformers.PreTrainedModel`):
             The loaded model from `transformers`
+        use_gradient_checkpointing, (`bool`):
+            set True to save memory. Warning: when use LazyLora, need this to be False to use past_key_values for prefix tuning in LazyLora.
     """
     loaded_in_kbit = getattr(model, "is_loaded_in_8bit", False) or getattr(model, "is_loaded_in_4bit", False)
 

@@ -57,10 +57,13 @@ class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
         lazy_pre_lora_alpha (`float`): The alpha parameter for Pre-Lazy Lora (LLaMA adapter) scaling.
         lazy_lora_dropout (`float`): The dropout probability for Lazy Lora layers.
         fan_in_fan_out (`bool`): Set this to True if the layer to replace stores weight like (fan_in, fan_out).
+        is_r_by_svd (`bool`): Set this to True if use singular value of pretrained weight matrices to dynamically determine rank r, where averaged rank budget is still determined by the given r.
         For example, gpt-2 uses `Conv1D` which stores weights like (fan_in, fan_out) and hence this should be set to `True`.:
         bias (`str`): Bias type for Lazy Lora. Can be 'none', 'all' or 'lora_only'
-        modules_to_save (`List[str]`):List of modules apart from Lazy LoRA layers to be set as trainable
+        lazy_pre_adapter_type (`str`): LLaMA adapter for lazy lora. Can be 'linear', 'conv1d', or 'none'.
+        modules_to_save (`List[str]`): List of modules apart from Lazy LoRA layers to be set as trainable
             and saved in the final checkpoint.
+        init_lazy_lora_weights (`bool`): Set this to True if initialize the weights of lazy lora layers. Default is True.
 
         prompt_tuning_config (`PromptTuningConfig`): The config for prompt tuning
         prefix_tuning_config (`PrefixTuningConfig`): The config for prefix tuning
@@ -135,6 +138,55 @@ class LazyLoraModel(torch.nn.Module):
         `torch.nn.Module`: The lazy Lora model.
 
     Example:
+        ```py
+        >>> import os
+        >>> from transformers AutoModelForCausalLM, BitsAndBytesConfig
+        >>> model_name_or_path = 'bigscience/bloomz-560m'
+        >>> cache_dir = os.getcwd() # change this
+
+        >>> bnb_config = BitsAndBytesConfig(
+        ...     load_in_4bit=True,
+        ...     bnb_4bit_use_double_quant=True,
+        ...     bnb_4bit_quant_type='nf4',
+        ...     bnb_4bit_compute_dtype=torch.bfloat16
+        ... )
+
+        >>> model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
+        ...     quantization_config=bnb_config, # 4-bit, change this
+        ...     device_map={"":0}, # gpu0, change this
+        ...     cache_dir=cache_dir) 
+
+        >>> from peft import LazyLoraConfig, get_peft_model, PrefixTuningConfig, TaskType, PeftType, PromptTuningConfig, PromptTuningInit
+
+        >>> peft_config_prompt_tuning = PromptTuningConfig(
+        ...     task_type=TaskType.CAUSAL_LM,
+        ...     prompt_tuning_init=PromptTuningInit.TEXT,
+        ...     num_virtual_tokens=8,
+        ...     prompt_tuning_init_text="Classify if the tweet is a complaint or not:",
+        ...     tokenizer_name_or_path=model_name_or_path,
+        ... ) 
+
+        >>> peft_config_prefix_tuning = PrefixTuningConfig(
+        ...     task_type=TaskType.CAUSAL_LM,
+        ...     num_virtual_tokens=30
+        ... )
+
+        >>> config_lazy_lora = LazyLoraConfig(
+        ...     r=8,
+        ...     is_r_by_svd=True, 
+        ...     lazy_lora_alpha=32,
+        ...     lazy_pre_lora_alpha=0.1,
+        ...     lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
+        ...     target_modules=['query_key_value', 'dense_h_to_4h', 'dense_4h_to_h'],
+        ...     lazy_lora_dropout=0.05,
+        ...     bias='none',
+        ...     task_type=TaskType.CAUSAL_LM,
+        ...     prompt_tuning_config=peft_config_prompt_tuning,
+        ...     prefix_tuning_config=peft_config_prefix_tuning,
+        ... )
+        >>> model = get_peft_model(model, config_lazy_lora)
+
+        ```
 
         ```py
         >>> from transformers import AutoModelForSeq2SeqLM
@@ -144,6 +196,7 @@ class LazyLoraModel(torch.nn.Module):
         ...     peft_type="LAZY_LORA",
         ...     task_type="SEQ_2_SEQ_LM",
         ...     r=8,
+        ...     is_r_by_svd=True,
         ...     lazy_lora_alpha=32,
         ...     lazy_pre_lora_alpha=0.1,
         ...     lazy_pre_adapter_type='linear', 

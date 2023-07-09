@@ -35,7 +35,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
 model_id = "EleutherAI/gpt-neox-20b"
 #model_id = "EleutherAI/gpt-j-6b"
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True, # NOTE, 4bit, bnb = bits and bytes
     bnb_4bit_use_double_quant=True, 
@@ -49,7 +49,8 @@ tokenizer = AutoTokenizer.from_pretrained(model_id,
 
 model = AutoModelForCausalLM.from_pretrained(model_id, 
         quantization_config=bnb_config, # NOTE 这个是最重要的部分，是使用4bit导入pretrained model 
-        device_map={"":0},
+        #device_map={"":0},
+        device_map='auto',
         cache_dir='/workspace/asr/Huatuo-Llama-Med-Chinese')
 
 """Then we have to apply some preprocessing to the model to prepare it for training. 
@@ -60,9 +61,10 @@ import sys
 sys.path.append('/workspace/asr/peft/src')
 
 from peft import prepare_model_for_kbit_training, TaskType, PeftType, PromptTuningConfig, PromptTuningInit, PrefixTuningConfig # NOTE 非常重要, 4bit, 8bit
-import ipdb; ipdb.set_trace()
-model.gradient_checkpointing_enable()
-model = prepare_model_for_kbit_training(model) # NOTE
+#import ipdb; ipdb.set_trace()
+#model.gradient_checkpointing_enable() # TODO this has a bug, TODO, layer_past was not used
+model.gradient_checkpointing_disable()
+model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False) # NOTE
 
 def print_trainable_parameters(model):
     """
@@ -80,7 +82,7 @@ def print_trainable_parameters(model):
 
 from peft import LazyLoraConfig, LoraConfig, get_peft_model
 
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 config_lora = LoraConfig(
     r=8, 
     lora_alpha=32, 
@@ -104,6 +106,7 @@ peft_config_prefix_tuning = PrefixTuningConfig(
 )
 config_lazylora = LazyLoraConfig(
     r=8,
+    is_r_by_svd=True, 
     lazy_lora_alpha=32,
     lazy_pre_lora_alpha=0.1,
     lazy_pre_adapter_type='linear',
@@ -116,7 +119,7 @@ config_lazylora = LazyLoraConfig(
 )
 config = config_lazylora
 
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 model = get_peft_model(model, config)
 print_trainable_parameters(model) 
 # trainable params: 8650752 || all params: 10597552128 || trainable%: 0.08162971878329976
@@ -137,13 +140,13 @@ import transformers
 # needed for gpt-neo-x tokenizer
 tokenizer.pad_token = tokenizer.eos_token
 
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 # NOTE
 trainer = transformers.Trainer(
     model=model,
     train_dataset=data["train"],
     args=transformers.TrainingArguments(
-        per_device_train_batch_size=12,
+        per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         warmup_steps=2,
         max_steps=10,
@@ -151,19 +154,19 @@ trainer = transformers.Trainer(
         fp16=True,
         logging_steps=1,
         output_dir="outputs",
-        optim="paged_adamw_8bit",
+        #optim="paged_adamw_8bit",
         #n_gpu=1,
         #model_parallel=False,
-        #optim="adamw_bnb_8bit" # NOTE
+        optim="adamw_bnb_8bit" # NOTE
     ),
     data_collator=transformers.DataCollatorForLanguageModeling(tokenizer, mlm=False),
 )
 model.config.use_cache = False  # silence the warnings. Please re-enable for inference!
 
 # NOTE --- 进入peft fine-tuning的逻辑 ---
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 trainer.train()
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 
 model_to_save = trainer.model.module if hasattr(trainer.model, 'module') else trainer.model  
 # Take care of distributed/parallel training
@@ -177,7 +180,7 @@ model = get_peft_model(model, lora_config)
 
 text = "Elon Musk "
 device = "cuda:0"
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 
 inputs = tokenizer(text, return_tensors="pt").to(device)
 outputs = model.generate(**inputs, max_new_tokens=20)

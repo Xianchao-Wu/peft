@@ -18,17 +18,15 @@ from transformers import default_data_collator, get_linear_schedule_with_warmup
 from tqdm import tqdm
 #from datasets import load_dataset
 
-cache_dir=os.getcwd()
+#cache_dir=os.getcwd()
+cache_dir="/workspace/asr/Huatuo-Llama-Med-Chinese"
 
 device = "cuda:0"
-#model_name_or_path = "bigscience/bloomz-560m" # NOTE change model size if required, tested okay
-#model_name_or_path = "bigscience/bloomz-1b7" # NOTE change model size if required, tested okay
-#model_name_or_path = "bigscience/bloomz-3b" # NOTE change model size if required, tested okay
-#model_name_or_path = "bigscience/bloomz-7b1" # NOTE change model size if required, tested okay
-#model_name_or_path = "mosaicml/mpt-7b" # NOTE change model size if required, tested NOT TODO okay
-model_name_or_path = "tiiuae/falcon-7b" # NOTE change model size if required, tested okay
-#model_name_or_path = "tiiuae/falcon-40b" # NOTE change model size if required, tested okay
-tokenizer_name_or_path = model_name_or_path #"bigscience/bloomz-560m"
+#model_name_or_path = "bigscience/bloomz-560m" # NOTE change model size if required
+#tokenizer_name_or_path = "bigscience/bloomz-560m"
+
+model_name_or_path = "EleutherAI/gpt-neox-20b" # NOTE change model size if required
+tokenizer_name_or_path = "EleutherAI/gpt-neox-20b"
 
 #model_name_or_path = "bigscience/bloomz-7b1"
 #tokenizer_name_or_path = "bigscience/bloomz-7b1"
@@ -42,9 +40,9 @@ dataset_name = "twitter_complaints"
 text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
-lr = 3e-5
-num_epochs = 5 # NOTE TODO, change this to 50 for the real peft
-batch_size = 8 
+lr = 1e-12
+num_epochs = 300 # NOTE TODO, change this to 50 for the real peft
+batch_size = 8 #16 
 
 
 # In[3]:
@@ -194,7 +192,7 @@ print(next(iter(test_dataloader)))
 
 # In[9]:
 
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 
 # creating model, NOTE
 
@@ -210,7 +208,7 @@ bnb_config = BitsAndBytesConfig(
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
         quantization_config=bnb_config,
         device_map={"":0},
-        trust_remote_code=True,
+        #device_map='auto', 
         cache_dir=cache_dir) # 559,214,592
 
 from peft import LazyLoraConfig, get_peft_model
@@ -232,10 +230,10 @@ peft_config_prefix_tuning = PrefixTuningConfig(
 )
 
 
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 config_lazy_lora = LazyLoraConfig(
     r=8,
-    is_r_by_svd=True, # use svd singular value to determine rank r, dynamically NOTE
+    is_r_by_svd=False, #True, # use svd singular value to determine rank r, dynamically NOTE
     lazy_lora_alpha=32,
     lazy_pre_lora_alpha=0.1, 
     lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
@@ -287,7 +285,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 # training and evaluation
 model = model.to(device)
 
-is_train = True # False NOTE
+is_train = True # NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
@@ -299,12 +297,12 @@ if is_train:
             # batch['attention_mask']=[8, 64], batch['labels']=[8, 64] NOTE 
             #         print(batch)
             #         print(batch["input_ids"].shape)
-            ##import ipdb; ipdb.set_trace()
+            #import ipdb; ipdb.set_trace()
             outputs = model(**batch) 
             # TODO forward, need to check the forward algorithm details... NOTE
             loss = outputs.loss
             total_loss += loss.detach().float()
-            ##import ipdb; ipdb.set_trace()
+            #import ipdb; ipdb.set_trace()
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
@@ -378,6 +376,7 @@ config = PeftConfig.from_pretrained(peft_model_id)
 model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path,
         quantization_config=bnb_config,
         device_map={"":0},
+        #device_map='auto', 
         cache_dir=cache_dir)
 model = PeftModel.from_pretrained(model, peft_model_id)
 
@@ -411,7 +410,7 @@ if is_train:
             break
 
 eval_preds = []
-
+#import ipdb; ipdb.set_trace()
 for _, batch in enumerate(tqdm(eval_dataloader)):
     batch = {k:v.to(device) for k, v in batch.items() if k != 'labels'}
     with torch.no_grad():

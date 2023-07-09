@@ -974,8 +974,21 @@ class PeftModelForCausalLM(PeftModel):
                 )
             elif peft_config.peft_type == PeftType.LAZY_LORA:
                 num_virtual_tokens = 0
+                # --- the prompt tuning part for Lazy Lora ---
                 if peft_config.prompt_tuning_config is not None:
                     num_virtual_tokens = peft_config.prompt_tuning_config.num_virtual_tokens
+                    if num_virtual_tokens > 0:
+                        if model_kwargs.get('position_ids', None) is not None:
+                            warnings.warn(
+                                'Position ids are not supported for PEFT lazy lora with prompt tuning. Ignoring position ids.'
+                            )
+                            model_kwargs['position_ids'] = None # TODO 
+                        if model_kwargs.get('token_type_ids', None) is not None:
+                            warnings.warn(
+                                'Token type ids are not supported for PEFT lazy lora with prompt tuning. Ignoring token type ids.'
+                            )
+                            model_kwargs['token_type_ids'] = None
+                # --- the prefix tuning part for Lazy Lora ---
                 if peft_config.prefix_tuning_config is not None:
                     num_virtual_tokens += peft_config.prefix_tuning_config.num_virtual_tokens
                 prefix_attention_mask = torch.ones(
