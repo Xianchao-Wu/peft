@@ -17,7 +17,7 @@ import re
 import warnings
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import List, Optional, Union
+from typing import List, Optional, Union #, Dict
 
 import torch
 import torch.nn as nn
@@ -58,6 +58,8 @@ class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
         lazy_lora_dropout (`float`): The dropout probability for Lazy Lora layers.
         fan_in_fan_out (`bool`): Set this to True if the layer to replace stores weight like (fan_in, fan_out).
         is_r_by_svd (`bool`): Set this to True if use singular value of pretrained weight matrices to dynamically determine rank r, where averaged rank budget is still determined by the given r.
+        r_by_module_dict (`Dict{str:int}`): Dict of module-to-rank for lazy lora.
+        is_r_reuse (`bool`): Set this to True if we reuse the ranks given in r_by_module_dict.
         For example, gpt-2 uses `Conv1D` which stores weights like (fan_in, fan_out) and hence this should be set to `True`.:
         bias (`str`): Bias type for Lazy Lora. Can be 'none', 'all' or 'lora_only'
         lazy_pre_adapter_type (`str`): LLaMA adapter for lazy lora. Can be 'linear', 'conv1d', or 'none'.
@@ -88,6 +90,16 @@ class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
     is_r_by_svd: bool = field(
         default=False,
         metadata={"help": "if True, then use singular value to determine rank r and averaged rank budget is still determined by the given r"},
+    )
+    r_by_module_dict : Optional[dict] = field(
+        default=None,
+        metadata={
+            'help': "dictionary of module.key to its rank, where the rank is determined by the module's weight matrix's singular value."
+        },
+    )
+    is_r_reuse: bool = field(
+        default=True,
+        metadata={"help": "if True, then reuse the ranks stored in r_by_module_dict"},
     )
     bias: str = field(
         default="none", 
@@ -262,9 +274,14 @@ class LazyLoraModel(torch.nn.Module):
         return sum(si).item()
 
     def _find_rank_by_svd(self, key_list, lazy_lora_config, loaded_in_4bit, loaded_in_8bit):
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
+        if lazy_lora_config.r_by_module_dict is not None and lazy_lora_config.is_r_reuse:
+            return lazy_lora_config.r_by_module_dict
+
         key_to_rank_dict = dict()
         for key in key_list:
+            if 'embed' in key or 'head' in key:
+                continue # skip 'word_embeddings' and 'lm_head'
             if isinstance(lazy_lora_config.target_modules, str):
                 target_module_found = re.fullmatch(lazy_lora_config.target_modules, key)
             else:
@@ -308,12 +325,13 @@ class LazyLoraModel(torch.nn.Module):
 
             for akey in a_key_list:
                 key_to_rank_dict[akey] = round(budget * key_to_rank_dict[akey]/s_value_total)
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         print(key_to_rank_dict)
+        lazy_lora_config.r_by_module_dict = key_to_rank_dict
         return key_to_rank_dict
 
     def _find_and_replace(self, adapter_name):
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         lazy_lora_config = self.peft_config[adapter_name]
         loaded_in_4bit = getattr(self.model, "is_loaded_in_4bit", False)
         loaded_in_8bit = getattr(self.model, "is_loaded_in_8bit", False)
@@ -393,6 +411,7 @@ class LazyLoraModel(torch.nn.Module):
                             adapter_name, target.in_features, target.out_features, bias=bias, **fourbit_kwargs
                         ) # NOTE case 2
                     elif isinstance(target, torch.nn.Embedding):
+                        import ipdb; ipdb.set_trace()
                         embedding_kwargs = kwargs.copy()
                         embedding_kwargs.pop("fan_in_fan_out", None)
                         in_features, out_features = target.num_embeddings, target.embedding_dim
@@ -685,14 +704,17 @@ class LazyLoraLayer:
         lazy_lora_alpha, 
         lazy_lora_dropout, 
         init_lazy_lora_weights,
-        lazy_pre_lora_alpha
+        lazy_pre_lora_alpha,
+        lazy_pre_adapter_type
     ):
+        import ipdb; ipdb.set_trace()
         self.r[adapter_name] = r
         self.lazy_lora_alpha[adapter_name] = lazy_lora_alpha
         self.lazy_pre_lora_alpha[adapter_name] = lazy_pre_lora_alpha
+        self.lazy_pre_adapter_type = lazy_pre_adapter_type
         if lazy_lora_dropout > 0.0:
             lazy_lora_dropout_layer = nn.Dropout(p=lazy_lora_dropout)
-            lazy_pre_lora_dropout_layer = nn.Dropout(p=lazy_lora_dropout)
+            lazy_pre_lora_dropout_layer = nn.Dropout(p=lazy_lora_dropout) # TODO separate?
         else:
             lazy_lora_dropout_layer = nn.Identity()
             lazy_pre_lora_dropout_layer = nn.Identity()
@@ -712,7 +734,8 @@ class LazyLoraLayer:
             self.pre_scaling[adapter_name] = lazy_pre_lora_alpha
         if init_lazy_lora_weights:
             self.reset_lazy_lora_parameters(adapter_name)
-        self.to(self.weight.device)
+        import ipdb; ipdb.set_trace()
+        self.to(self.weight.device) # TODO why 'cpu'?
 
     def reset_lazy_lora_parameters(self, adapter_name):
         if adapter_name in self.lazy_lora_A.keys():
@@ -813,6 +836,8 @@ class Linear(nn.Linear, LazyLoraLayer):
             #import ipdb; ipdb.set_trace()
             debug_conv1d = (self.lazy_pre_adapter_type == 'conv1d') 
             if debug_conv1d and self.active_adapter in self.lazy_pre_lora_A:
+                previous_dtype_1 = x.dtype
+                x = x.to(self.lazy_pre_lora_A[self.active_adapter].weight.dtype)
                 x = x.transpose(1, 2)
                 x = self.pre_scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
                         self.lazy_pre_lora_dropout[self.active_adapter](
@@ -820,14 +845,18 @@ class Linear(nn.Linear, LazyLoraLayer):
                             ) # A -> dropout -> B
                         ) + x  
                 x = x.transpose(1, 2).contiguous()
+                x = x.to(previous_dtype_1)
             
             debug_linear = (self.lazy_pre_adapter_type == 'linear')
             if debug_linear and self.active_adapter in self.lazy_pre_lora_A:
+                previous_dtype_2 = x.dtype
+                x = x.to(self.lazy_pre_lora_A[self.active_adapter].weight.dtype)
                 x = self.pre_scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
                         self.lazy_pre_lora_A[self.active_adapter](
                             self.lazy_pre_lora_dropout[self.active_adapter](x)
                             ) # dropout -> A -> B
                         ) + x  
+                x = x.to(previous_dtype_2)
 
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias) # NOTE here
             # 这是调用原来的预训练里面的weight/bias, result.shape=[8, 64, 3072]
@@ -858,7 +887,9 @@ class Embedding(nn.Embedding, LazyLoraLayer):
         embedding_dim: int,
         r: int = 0,
         lazy_lora_alpha: int = 1,
+        lazy_pre_lora_alpha: float = 0.1,
         lazy_lora_dropout: float = 0.0,
+        lazy_pre_adapter_type: str = 'linear', # 'none', 'linear', or 'conv1d'
         **kwargs,
     ):
         init_lazy_lora_weights = kwargs.pop("init_lazy_lora_weights", True)
@@ -866,10 +897,10 @@ class Embedding(nn.Embedding, LazyLoraLayer):
         nn.Embedding.__init__(self, num_embeddings, embedding_dim, **kwargs)
         LazyLoraLayer.__init__(self, in_features=num_embeddings, out_features=embedding_dim)
 
-        self.weight.requires_grad = False
+        self.weight.requires_grad = False # self.weight 是重新初始化的? 还是从pretrained checkpoint中load 过来的? NOTE TODO -> okay 后续调用了_replace_module()，是按照pretrained ckpt，对这里的self.weight的取值，以及gpu都赋值了, okay.
 
         nn.Embedding.reset_parameters(self)
-        self.update_layer_embedding(adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights)
+        self.update_layer_embedding(adapter_name, r, lazy_lora_alpha, lazy_lora_dropout, init_lazy_lora_weights, lazy_pre_lora_alpha, lazy_pre_adapter_type)
         self.active_adapter = adapter_name
 
     def unmerge(self, mode: bool = True):
@@ -911,9 +942,11 @@ class Embedding(nn.Embedding, LazyLoraLayer):
                     * self.scaling[self.active_adapter]
                 )
                 self.merged = False
-            return nn.Embedding.forward(self, x)
+            return nn.Embedding.forward(self, x.to(self.weight.device))
 
         elif self.r[self.active_adapter] > 0 and not self.merged:
+            if x.device != self.weight.device:
+                x = x.to(self.weight.device)
             result = nn.Embedding.forward(self, x)
             if self.r[self.active_adapter] > 0:
                 after_A = F.embedding(
@@ -1067,14 +1100,14 @@ if is_bnb_available():
                     debug_linear = (self.lazy_pre_adapter_type == 'linear')
                     if debug_linear and (self.active_adapter in self.lazy_pre_lora_A):
                         #import ipdb; ipdb.set_trace() # NOTE 
-                        previous_dtype = x.dtype
+                        previous_dtype_2 = x.dtype
                         x = x.to(self.lazy_pre_lora_A[self.active_adapter].weight.dtype)
                         x = self.pre_scaling[self.active_adapter] * self.lazy_pre_lora_B[self.active_adapter](
                             self.lazy_pre_lora_A[self.active_adapter](
                                 self.lazy_pre_lora_dropout[self.active_adapter](x)
                             ) # dropout -> A -> B
                         ) + x
-                        x = x.to(previous_dtype)
+                        x = x.to(previous_dtype_2)
                 #import ipdb; ipdb.set_trace()
                 result = super().forward(x) # why? > /usr/local/lib/python3.8/dist-packages/bitsandbytes/nn/modules.py(207)forward()
 

@@ -21,12 +21,12 @@ from tqdm import tqdm
 cache_dir=os.getcwd()
 
 device = "cuda:0"
-#model_name_or_path = "bigscience/bloomz-560m" # NOTE change model size if required, tested okay
+model_name_or_path = "bigscience/bloomz-560m" # NOTE change model size if required, tested okay
 #model_name_or_path = "bigscience/bloomz-1b7" # NOTE change model size if required, tested okay
 #model_name_or_path = "bigscience/bloomz-3b" # NOTE change model size if required, tested okay
 #model_name_or_path = "bigscience/bloomz-7b1" # NOTE change model size if required, tested okay
 #model_name_or_path = "mosaicml/mpt-7b" # NOTE change model size if required, tested NOT TODO okay
-model_name_or_path = "tiiuae/falcon-7b" # NOTE change model size if required, tested okay
+#model_name_or_path = "tiiuae/falcon-7b" # NOTE change model size if required, tested okay
 #model_name_or_path = "tiiuae/falcon-40b" # NOTE change model size if required, tested okay
 tokenizer_name_or_path = model_name_or_path #"bigscience/bloomz-560m"
 
@@ -42,9 +42,9 @@ dataset_name = "twitter_complaints"
 text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
-lr = 3e-5
+lr = 3e-3
 num_epochs = 5 # NOTE TODO, change this to 50 for the real peft
-batch_size = 8 
+batch_size = 64 
 
 
 # In[3]:
@@ -212,6 +212,7 @@ model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
         device_map={"":0},
         trust_remote_code=True,
         cache_dir=cache_dir) # 559,214,592
+import ipdb; ipdb.set_trace()
 
 from peft import LazyLoraConfig, get_peft_model
 
@@ -239,7 +240,7 @@ config_lazy_lora = LazyLoraConfig(
     lazy_lora_alpha=32,
     lazy_pre_lora_alpha=0.1, 
     lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
-    target_modules=['query_key_value', 'dense_h_to_4h', 'dense_4h_to_h'],
+    target_modules=['query_key_value', 'dense_h_to_4h', 'dense_4h_to_h', 'word_embeddings', 'lm_head'], # multilingual case -> 'word_embeddings', and 'lm_head' are possibly sensitive modules to append with lazy lora~~
     lazy_lora_dropout=0.05,
     bias='none',
     task_type='CAUSAL_LM',
@@ -250,7 +251,7 @@ peft_config = config_lazy_lora
 
 model = get_peft_model(model, config_lazy_lora)
 
-#import ipdb; ipdb.set_trace()
+import ipdb; ipdb.set_trace()
 #model = get_peft_model(model, peft_config) # 560,689,152
 model.print_trainable_parameters()
 
@@ -287,7 +288,7 @@ lr_scheduler = get_linear_schedule_with_warmup(
 # training and evaluation
 model = model.to(device)
 
-is_train = True # False NOTE
+is_train = True #NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
@@ -340,7 +341,7 @@ if is_train:
 
 # In[36]:
 
-#import ipdb; ipdb.set_trace()
+import ipdb; ipdb.set_trace()
 model.eval()
 
 if is_train: 
@@ -371,7 +372,7 @@ if is_train:
 
 from peft import PeftModel, PeftConfig
 
-#import ipdb; ipdb.set_trace()
+import ipdb; ipdb.set_trace()
 peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}_4bit"
 
 config = PeftConfig.from_pretrained(peft_model_id)
