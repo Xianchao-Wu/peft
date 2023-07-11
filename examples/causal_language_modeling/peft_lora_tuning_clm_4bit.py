@@ -206,9 +206,9 @@ from peft import LoraConfig, get_peft_model
 
 import ipdb; ipdb.set_trace()
 config_lora = LoraConfig(
-        r=8,
+        r=8, # 16, 32, 64, 1024 -> 8 -> 1024
         lora_alpha=32,
-        target_modules=['query_key_value'],
+        target_modules=['query_key_value', 'word_embeddings', 'lm_head'],
         lora_dropout=0.05,
         bias='none',
         task_type='CAUSAL_LM'
