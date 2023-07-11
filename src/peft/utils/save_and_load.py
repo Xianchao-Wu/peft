@@ -108,7 +108,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         model ([`PeftModel`]): The Peft model.
         peft_model_state_dict (`dict`): The state dict of the Peft model.
     """
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     config = model.peft_config[adapter_name]
     state_dict = {}
     if model.modules_to_save is not None:
@@ -121,7 +121,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
             state_dict[key] = value
     else:
         state_dict = peft_model_state_dict
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     if config.peft_type in (PeftType.LORA, PeftType.ADALORA, PeftType.LAZY_LORA): # NOTE
         peft_model_state_dict = {}
         for k, v in state_dict.items():
@@ -144,7 +144,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         peft_model_state_dict = state_dict
     else:
         raise NotImplementedError
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     model.load_state_dict(peft_model_state_dict, strict=False) # NOTE 把预训练好的adapter weight，赋值给model对应位置
     if config.peft_type == PeftType.LAZY_LORA:
         # --- 1 prompt tuning ---

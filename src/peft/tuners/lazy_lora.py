@@ -526,6 +526,7 @@ class LazyLoraModel(torch.nn.Module):
         This method merges the lazy LoRa layers into the base model. This is needed if someone wants to use the base model
         as a standalone model.
         """
+        import ipdb; ipdb.set_trace()
         if getattr(self.config, "model_type", None) == "gpt2":
             raise ValueError("GPT2 models are not supported for merging lazy LORA layers")
 
@@ -790,7 +791,7 @@ class Linear(nn.Linear, LazyLoraLayer):
         self.active_adapter = adapter_name # 'default'
 
     def merge(self):
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         if self.active_adapter not in self.lazy_lora_A.keys():
             return
         if self.merged:
@@ -807,7 +808,7 @@ class Linear(nn.Linear, LazyLoraLayer):
             self.merged = True
 
     def unmerge(self):
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         if self.active_adapter not in self.lazy_lora_A.keys():
             return
         if not self.merged:

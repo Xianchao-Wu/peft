@@ -131,7 +131,7 @@ class PeftConfigMixin(PushToHubMixin):
                             setattr(temp, k, v)
                     value = temp
                 setattr(config, key, value) # NOTE TODO 很多内容，没有导入进来啊... why?
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         return config # PeftConfig(peft_type='PREFIX_TUNING', base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=True) # NOTE 初次只是为了知道base_model_name_or_path的，还会有二次调用本方法，得到完全的config配置
 
     @classmethod
