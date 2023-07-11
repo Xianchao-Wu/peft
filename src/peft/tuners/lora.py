@@ -170,7 +170,7 @@ class LoraModel(torch.nn.Module):
 
     def _find_and_replace(self, adapter_name):
         lora_config = self.peft_config[adapter_name]
-        loaded_in_4bit = getattr(self.model, "is_loaded_in_4bit", False)
+        loaded_in_4bit = getattr(self.model, "is_loaded_in_4bit", False) # NOTE testing 4bit
         loaded_in_8bit = getattr(self.model, "is_loaded_in_8bit", False)
         if (loaded_in_4bit or loaded_in_8bit) and not is_bnb_available(): # NOTE not in
             raise ImportError(
@@ -228,7 +228,7 @@ class LoraModel(torch.nn.Module):
                                 "compress_statistics": target.weight.compress_statistics,
                                 "quant_type": target.weight.quant_type,
                             }
-                        )
+                        ) # {'r': 8, 'lora_alpha': 32, 'lora_dropout': 0.05, 'fan_in_fan_out': False, 'init_lora_weights': True, 'compute_dtype': torch.bfloat16, 'compress_statistics': True, 'quant_type': 'nf4'}
                         new_module = Linear4bit(
                             adapter_name, target.in_features, target.out_features, bias=bias, **fourbit_kwargs
                         ) # NOTE case 2
@@ -739,13 +739,13 @@ if is_bnb_available():
             # Lora implemented in a dense layer
             def __init__(
                 self,
-                adapter_name,
-                in_features,
-                out_features,
-                r: int = 0,
-                lora_alpha: int = 1,
-                lora_dropout: float = 0.0,
-                **kwargs,
+                adapter_name, # 'default'
+                in_features, # 6144
+                out_features, # 18432
+                r: int = 0, # 8
+                lora_alpha: int = 1, # 32
+                lora_dropout: float = 0.0, # 0.05
+                **kwargs, # {'bias': True, 'fan_in_fan_out': False, 'init_lora_weights': True, 'compute_dtype': torch.bfloat16, 'compress_statistics': True, 'quant_type': 'nf4'}
             ):
                 bnb.nn.Linear4bit.__init__(
                     self,

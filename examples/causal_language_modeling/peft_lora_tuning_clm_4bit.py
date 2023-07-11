@@ -36,8 +36,7 @@ text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
 lr = 3e-2
-#num_epochs = 500 # NOTE TODO, change this to 50 for the real peft
-num_epochs = 300 # NOTE TODO, change this to 50 for the real peft
+num_epochs = 5 # NOTE TODO, change this to 50 for the real peft
 batch_size = 8
 
 
@@ -191,59 +190,38 @@ print(next(iter(test_dataloader)))
 import ipdb; ipdb.set_trace()
 
 # creating model, NOTE
+from transformers import BitsAndBytesConfig
+
+bnb_config = BitsAndBytesConfig(
+    #load_in_4bit=True,
+    load_in_8bit=True,
+)
 
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
+        quantization_config=bnb_config,
+        device_map={"":0},
         cache_dir=cache_dir) # 559,214,592
 
 from peft import LoraConfig, get_peft_model
-from peft import AdaLoraModel, AdaLoraConfig
 
 import ipdb; ipdb.set_trace()
-#config_lora = LoraConfig( # NOTE this is for lora only, not for adalora
-#        r=8,
-#        lora_alpha=32,
-#        target_modules=['query_key_value'],
-#        lora_dropout=0.05,
-#        bias='none',
-#        task_type='CAUSAL_LM'
-#        ) # LoraConfig(peft_type=<PeftType.LORA: 'LORA'>, base_model_name_or_path=None, task_type='CAUSAL_LM', inference_mode=False, r=8, target_modules=['query_key_value'], lora_alpha=32, lora_dropout=0.05, fan_in_fan_out=False, bias='none', modules_to_save=None, init_lora_weights=True)
-
-#config_adalora = AdaLoraConfig(
-#        peft_type = 'ADALORA',
-#        task_type='CAUSAL_LM',
-#        r=8, # TODO, should change this???
-#        lora_alpha=32,
-#        target_modules=['query_key_value'],
-#        lora_dropout=0.01
-#        )
-
-config_adalora = AdaLoraConfig(
-        init_r=12,
-        target_r=8,
-        beta1=0.85,
-        beta2=0.85,
-        tinit=200,
-        tfinal=1000,
-        deltaT=10,
-        peft_type = 'ADALORA',
-        task_type='CAUSAL_LM',
-        r=8, # TODO, should change this???
+config_lora = LoraConfig(
+        r=8,
         lora_alpha=32,
         target_modules=['query_key_value'],
-        lora_dropout=0.01,
-        inference_mode=False,
-        )
+        lora_dropout=0.05,
+        bias='none',
+        task_type='CAUSAL_LM'
+        ) # LoraConfig(peft_type=<PeftType.LORA: 'LORA'>, base_model_name_or_path=None, task_type='CAUSAL_LM', inference_mode=False, r=8, target_modules=['query_key_value'], lora_alpha=32, lora_dropout=0.05, fan_in_fan_out=False, bias='none', modules_to_save=None, init_lora_weights=True)
+peft_config = config_lora
 
-peft_config = config_adalora
-
-model = get_peft_model(model, peft_config)
+model = get_peft_model(model, config_lora)
 
 import ipdb; ipdb.set_trace()
 #model = get_peft_model(model, peft_config) # 560,689,152
 model.print_trainable_parameters()
 
-# trainable params: 786432 || all params: 560001024 || trainable%: 0.14043402892063284, yes for LoRA, r=8
-# trainable params: 1179936 || all params: 560394552 || trainable%: 0.21055450945925683, for AdaLoRA; since init_r=12
+# trainable params: 786432 || all params: 560001024 || trainable%: 0.14043402892063284, yes for LoRA
 
 # In[10]:
 #model.print_trainable_parameters()
@@ -258,9 +236,7 @@ print(model)
 
 
 print(model.peft_config) # {'default': LoraConfig(peft_type=<PeftType.LORA: 'LORA'>, base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=False, r=8, target_modules=['query_key_value'], lora_alpha=32, lora_dropout=0.05, fan_in_fan_out=False, bias='none', modules_to_save=None, init_lora_weights=True)}
-# {'default': AdaLoraConfig(peft_type=<PeftType.ADALORA: 'ADALORA'>, base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=False, r=8, target_modules=['query_key_value'], lora_alpha=32, lora_dropout=0.01, fan_in_fan_out=False, bias='none', modules_to_save=None, init_lora_weights=True, target_r=8, init_r=12, tinit=0, tfinal=0, deltaT=1, beta1=0.85, beta2=0.85, orth_reg_weight=0.5, total_step=None, rank_pattern=None)} -> AdaLoRA NOTE
 
-# NOTE {'default': AdaLoraConfig(peft_type=<PeftType.ADALORA: 'ADALORA'>, base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=False, r=8, target_modules=['query_key_value'], lora_alpha=32, lora_dropout=0.01, fan_in_fan_out=False, bias='none', modules_to_save=None, init_lora_weights=True, target_r=8, init_r=12, tinit=200, tfinal=1000, deltaT=10, beta1=0.85, beta2=0.85, orth_reg_weight=0.5, total_step=None, rank_pattern=None)}
 
 # In[13]:
 
@@ -278,11 +254,8 @@ lr_scheduler = get_linear_schedule_with_warmup(
 
 # training and evaluation
 model = model.to(device)
-import ipdb; ipdb.set_trace()
-model.base_model.peft_config['default'].total_step = len(train_dataloader) * num_epochs
 
-is_train = False # NOTE
-global_step = 0
+is_train = True # False NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
@@ -301,9 +274,7 @@ if is_train:
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
-            model.base_model.update_and_allocate(global_step) # NOTE important for adalora
             optimizer.zero_grad()
-            global_step += 1
 
         model.eval()
         eval_loss = 0
@@ -327,7 +298,7 @@ if is_train:
 
     import ipdb; ipdb.set_trace()
     # saving model
-    peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}" # bigscience/bloomz-560m_ADALORA_CAUSAL_LM_epoch500
+    peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
     model.save_pretrained(peft_model_id)
     ckpt = f"{peft_model_id}/adapter_model.bin"
     #get_ipython().system('du -h $ckpt')

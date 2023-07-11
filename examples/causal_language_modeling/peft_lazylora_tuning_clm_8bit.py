@@ -8,8 +8,9 @@ from transformers import AutoModelForCausalLM
 import os
 import sys
 sys.path.append(os.getcwd()+"/../../src")
-from peft import get_peft_config, get_peft_model, PrefixTuningConfig, TaskType, PeftType
+from peft import get_peft_config, get_peft_model, PrefixTuningConfig, TaskType, PeftType, PromptTuningConfig, PromptTuningInit
 import torch
+torch.autograd.set_detect_anomaly(True)
 from datasets import load_dataset
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
@@ -35,10 +36,9 @@ dataset_name = "twitter_complaints"
 text_column = "Tweet text"
 label_column = "text_label"
 max_length = 64
-lr = 3e-2
-#num_epochs = 500 # NOTE TODO, change this to 50 for the real peft
-num_epochs = 300 # NOTE TODO, change this to 50 for the real peft
-batch_size = 8
+lr = 3e-5
+num_epochs = 350 # NOTE TODO, change this to 50 for the real peft
+batch_size = 32
 
 
 # In[3]:
@@ -192,75 +192,75 @@ import ipdb; ipdb.set_trace()
 
 # creating model, NOTE
 
+from transformers import BitsAndBytesConfig
+
+bnb_config = BitsAndBytesConfig(
+    load_in_8bit=True,
+    #bnb_4bit_use_double_quant=True,
+    #bnb_4bit_quant_type='nf4',
+    #bnb_4bit_compute_dtype=torch.bfloat16
+)
+
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
+        quantization_config=bnb_config,
+        device_map={"":0},
         cache_dir=cache_dir) # 559,214,592
 
-from peft import LoraConfig, get_peft_model
-from peft import AdaLoraModel, AdaLoraConfig
+from peft import LazyLoraConfig, get_peft_model
+
+peft_config_prompt_tuning = PromptTuningConfig(
+    task_type=TaskType.CAUSAL_LM,
+    prompt_tuning_init=PromptTuningInit.TEXT,
+    num_virtual_tokens=8,
+    prompt_tuning_init_text="Classify if the tweet is a complaint or not:",
+    tokenizer_name_or_path=model_name_or_path,
+) # PromptTuningConfig(peft_type=<PeftType.PROMPT_TUNING: 'PROMPT_TUNING'>, base_model_name_or_path=None, task_type=<Ta
+#skType.CAUSAL_LM: 'CAUSAL_LM'>, inference_mode=False, num_virtual_tokens=8, token_dim=None, num_transformer_submodules=
+#None, num_attention_heads=None, num_layers=None, prompt_tuning_init=<PromptTuningInit.TEXT: 'TEXT'>, prompt_tuning_init
+#_text='Classify if the tweet is a complaint or not:', tokenizer_name_or_path='bigscience/bloomz-560m')
+
+peft_config_prefix_tuning = PrefixTuningConfig(
+    task_type=TaskType.CAUSAL_LM, 
+    num_virtual_tokens=30
+)
+
 
 import ipdb; ipdb.set_trace()
-#config_lora = LoraConfig( # NOTE this is for lora only, not for adalora
-#        r=8,
-#        lora_alpha=32,
-#        target_modules=['query_key_value'],
-#        lora_dropout=0.05,
-#        bias='none',
-#        task_type='CAUSAL_LM'
-#        ) # LoraConfig(peft_type=<PeftType.LORA: 'LORA'>, base_model_name_or_path=None, task_type='CAUSAL_LM', inference_mode=False, r=8, target_modules=['query_key_value'], lora_alpha=32, lora_dropout=0.05, fan_in_fan_out=False, bias='none', modules_to_save=None, init_lora_weights=True)
+config_lazy_lora = LazyLoraConfig(
+    r=8,
+    is_r_by_svd=True,
+    lazy_lora_alpha=32,
+    lazy_pre_lora_alpha=0.1, 
+    lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
+    target_modules=['query_key_value'],
+    lazy_lora_dropout=0.05,
+    bias='none',
+    task_type='CAUSAL_LM',
+    prompt_tuning_config=peft_config_prompt_tuning,
+    prefix_tuning_config=peft_config_prefix_tuning,
+) 
+peft_config = config_lazy_lora
 
-#config_adalora = AdaLoraConfig(
-#        peft_type = 'ADALORA',
-#        task_type='CAUSAL_LM',
-#        r=8, # TODO, should change this???
-#        lora_alpha=32,
-#        target_modules=['query_key_value'],
-#        lora_dropout=0.01
-#        )
-
-config_adalora = AdaLoraConfig(
-        init_r=12,
-        target_r=8,
-        beta1=0.85,
-        beta2=0.85,
-        tinit=200,
-        tfinal=1000,
-        deltaT=10,
-        peft_type = 'ADALORA',
-        task_type='CAUSAL_LM',
-        r=8, # TODO, should change this???
-        lora_alpha=32,
-        target_modules=['query_key_value'],
-        lora_dropout=0.01,
-        inference_mode=False,
-        )
-
-peft_config = config_adalora
-
-model = get_peft_model(model, peft_config)
+model = get_peft_model(model, config_lazy_lora)
 
 import ipdb; ipdb.set_trace()
 #model = get_peft_model(model, peft_config) # 560,689,152
 model.print_trainable_parameters()
 
-# trainable params: 786432 || all params: 560001024 || trainable%: 0.14043402892063284, yes for LoRA, r=8
-# trainable params: 1179936 || all params: 560394552 || trainable%: 0.21055450945925683, for AdaLoRA; since init_r=12
+# trainable params: 786432 || all params: 560001024 || trainable%: 0.14043402892063284, yes for LoRA
+# trainable params: 1277952 || all params: 560492544 || trainable%: 0.228005173963563, yes for lazy lora, with two conv1d layers now! NOTE
 
 # In[10]:
 #model.print_trainable_parameters()
 
 
 # In[ ]:
-
+import ipdb; ipdb.set_trace()
 print(model)
-
 
 # In[12]:
 
-
-print(model.peft_config) # {'default': LoraConfig(peft_type=<PeftType.LORA: 'LORA'>, base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=False, r=8, target_modules=['query_key_value'], lora_alpha=32, lora_dropout=0.05, fan_in_fan_out=False, bias='none', modules_to_save=None, init_lora_weights=True)}
-# {'default': AdaLoraConfig(peft_type=<PeftType.ADALORA: 'ADALORA'>, base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=False, r=8, target_modules=['query_key_value'], lora_alpha=32, lora_dropout=0.01, fan_in_fan_out=False, bias='none', modules_to_save=None, init_lora_weights=True, target_r=8, init_r=12, tinit=0, tfinal=0, deltaT=1, beta1=0.85, beta2=0.85, orth_reg_weight=0.5, total_step=None, rank_pattern=None)} -> AdaLoRA NOTE
-
-# NOTE {'default': AdaLoraConfig(peft_type=<PeftType.ADALORA: 'ADALORA'>, base_model_name_or_path='bigscience/bloomz-560m', task_type='CAUSAL_LM', inference_mode=False, r=8, target_modules=['query_key_value'], lora_alpha=32, lora_dropout=0.01, fan_in_fan_out=False, bias='none', modules_to_save=None, init_lora_weights=True, target_r=8, init_r=12, tinit=200, tfinal=1000, deltaT=10, beta1=0.85, beta2=0.85, orth_reg_weight=0.5, total_step=None, rank_pattern=None)}
+print(model.peft_config) 
 
 # In[13]:
 
@@ -278,11 +278,8 @@ lr_scheduler = get_linear_schedule_with_warmup(
 
 # training and evaluation
 model = model.to(device)
-import ipdb; ipdb.set_trace()
-model.base_model.peft_config['default'].total_step = len(train_dataloader) * num_epochs
 
-is_train = False # NOTE
-global_step = 0
+is_train = True # False NOTE
 if is_train:
     for epoch in range(num_epochs):
         model.train()
@@ -294,16 +291,16 @@ if is_train:
             # batch['attention_mask']=[8, 64], batch['labels']=[8, 64] NOTE 
             #         print(batch)
             #         print(batch["input_ids"].shape)
+            #import ipdb; ipdb.set_trace()
             outputs = model(**batch) 
             # TODO forward, need to check the forward algorithm details... NOTE
             loss = outputs.loss
             total_loss += loss.detach().float()
+            #import ipdb; ipdb.set_trace()
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
-            model.base_model.update_and_allocate(global_step) # NOTE important for adalora
             optimizer.zero_grad()
-            global_step += 1
 
         model.eval()
         eval_loss = 0
@@ -327,7 +324,7 @@ if is_train:
 
     import ipdb; ipdb.set_trace()
     # saving model
-    peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}" # bigscience/bloomz-560m_ADALORA_CAUSAL_LM_epoch500
+    peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}_8bit" # 'bigscience/bloomz-560m_LAZY_LORA_CAUSAL_LM_epoch500' NOTE
     model.save_pretrained(peft_model_id)
     ckpt = f"{peft_model_id}/adapter_model.bin"
     #get_ipython().system('du -h $ckpt')
@@ -358,6 +355,7 @@ if is_train:
             print(tokenizer.batch_decode(outputs.detach().cpu().numpy(), 
                 skip_special_tokens=True))
 
+            break
 
 # In[16]:
 
@@ -366,10 +364,12 @@ if is_train:
 from peft import PeftModel, PeftConfig
 
 import ipdb; ipdb.set_trace()
-peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}"
+peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task_type}_epoch{num_epochs}_8bit"
 
 config = PeftConfig.from_pretrained(peft_model_id)
 model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path,
+        quantization_config=bnb_config,
+        device_map={"":0},
         cache_dir=cache_dir)
 model = PeftModel.from_pretrained(model, peft_model_id)
 
@@ -400,6 +400,7 @@ if is_train:
             print(outputs)
             print(tokenizer.batch_decode(outputs.detach().cpu().numpy(), 
                 skip_special_tokens=True))
+            break
 
 eval_preds = []
 
@@ -421,6 +422,7 @@ for _, batch in enumerate(tqdm(eval_dataloader)):
         else:
             temp2.append(atemp)
     eval_preds.extend(temp2)
+    break
 
 correct = 0
 total = 0

@@ -193,6 +193,7 @@ import ipdb; ipdb.set_trace()
 # creating model, NOTE
 
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
+        device_map={"":0},
         cache_dir=cache_dir) # 559,214,592
 
 from peft import LazyLoraConfig, get_peft_model
@@ -217,10 +218,11 @@ peft_config_prefix_tuning = PrefixTuningConfig(
 import ipdb; ipdb.set_trace()
 config_lazy_lora = LazyLoraConfig(
     r=8,
+    is_r_by_svd=True, # NOTE
     lazy_lora_alpha=32,
     lazy_pre_lora_alpha=0.1, 
     lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
-    target_modules=['query_key_value'],
+    target_modules=['query_key_value', 'dense_h_to_4h', 'dense_4h_to_h'],
     lazy_lora_dropout=0.05,
     bias='none',
     task_type='CAUSAL_LM',
@@ -356,6 +358,7 @@ peft_model_id = f"{model_name_or_path}_{peft_config.peft_type}_{peft_config.task
 
 config = PeftConfig.from_pretrained(peft_model_id)
 model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path,
+        device_map={"":0},
         cache_dir=cache_dir)
 model = PeftModel.from_pretrained(model, peft_model_id)
 

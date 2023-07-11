@@ -171,7 +171,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                       method (`./my_lora_config_directory/`).
         """
         from .mapping import MODEL_TYPE_TO_PEFT_MODEL_MAPPING, PEFT_TYPE_TO_CONFIG_MAPPING
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         # load the config
         config = PEFT_TYPE_TO_CONFIG_MAPPING[
             PeftConfig.from_pretrained(model_id, subfolder=kwargs.get("subfolder", None)).peft_type
@@ -193,6 +193,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         else:
             model = MODEL_TYPE_TO_PEFT_MODEL_MAPPING[config.task_type](model, config, adapter_name) # NOTE 构造peft model
         model.load_adapter(model_id, adapter_name, **kwargs) # NOTE, model_id='bigscience/bloomz-560m_PREFIX_TUNING_CAUSAL_LM_epoch200', load trained parameter weights
+        import ipdb; ipdb.set_trace()
         return model
 
     def _setup_prompt_encoder(self, adapter_name):
@@ -291,7 +292,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         prompt_embeddings = prompt_encoder(prompt_tokens) # NOTE 保存prompt_encoder和prompt_embeddings啥区别？目前prompt tuning上，一样的啊... TODO
         return prompt_embeddings[0].detach().cpu()
 
-    def get_prompt(self, batch_size):
+    def get_prompt(self, batch_size, in_dtype=torch.float32):
         """
         Returns the virtual prompts to use for Peft. Only applicable when `peft_config.peft_type != PeftType.LORA`.
         """
@@ -349,7 +350,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                     prefix_config.num_layers * 2, # 48
                     prefix_config.num_attention_heads, # 16
                     prefix_config.token_dim // prefix_config.num_attention_heads, # 1024/16=64
-                ) 
+                ).to(in_dtype) 
                 # [8, 30, 49152] -> [8, 30, 48, 16, 64]
 
                 if peft_config.num_transformer_submodules == 2:
@@ -489,7 +490,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
     def load_adapter(self, model_id, adapter_name, is_trainable=False, **kwargs):
         from .mapping import PEFT_TYPE_TO_CONFIG_MAPPING
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         if adapter_name not in self.peft_config:
             # load the config
             peft_config = PEFT_TYPE_TO_CONFIG_MAPPING[
@@ -692,7 +693,7 @@ class PeftModelForSequenceClassification(PeftModel):
                 ).long()
             if inputs_embeds is None:
                 inputs_embeds = self.word_embeddings(input_ids)
-            prompts = self.get_prompt(batch_size=batch_size)
+            prompts = self.get_prompt(batch_size=batch_size, in_dtype=inputs_embeds.dtype)
             prompts = prompts.to(inputs_embeds.dtype)
             inputs_embeds = torch.cat((prompts, inputs_embeds), dim=1)
             return self.base_model(inputs_embeds=inputs_embeds, **kwargs)
@@ -891,7 +892,7 @@ class PeftModelForCausalLM(PeftModel):
                 # ||| [8,8] 个 -100 ||| [8,20]个-100
                 kwargs["labels"] = torch.cat((prefix_labels, labels), dim=1) 
                 # ||| [8, 72] prefix + labels ||| [8, 84]
-            prompts = self.get_prompt(batch_size=batch_size) # ||| [8, 8, 1024] 8个虚拟的tokens, 0 to 7, 然后用prompt embedding (8, 1024)给embed了一下，就得到最后的张量[8, 8, 1024]
+            prompts = self.get_prompt(batch_size=batch_size, in_dtype=inputs_embeds.dtype) # ||| [8, 8, 1024] 8个虚拟的tokens, 0 to 7, 然后用prompt embedding (8, 1024)给embed了一下，就得到最后的张量[8, 8, 1024]
             if isinstance(prompts, tuple):
                 #import ipdb; ipdb.set_trace()
                 # for lazy lora with (1) prompt tuning and (2) prefix tuning
@@ -974,8 +975,21 @@ class PeftModelForCausalLM(PeftModel):
                 )
             elif peft_config.peft_type == PeftType.LAZY_LORA:
                 num_virtual_tokens = 0
+                # --- the prompt tuning part for Lazy Lora ---
                 if peft_config.prompt_tuning_config is not None:
                     num_virtual_tokens = peft_config.prompt_tuning_config.num_virtual_tokens
+                    if num_virtual_tokens > 0:
+                        if model_kwargs.get('position_ids', None) is not None:
+                            warnings.warn(
+                                'Position ids are not supported for PEFT lazy lora with prompt tuning. Ignoring position ids.'
+                            )
+                            model_kwargs['position_ids'] = None # TODO 
+                        if model_kwargs.get('token_type_ids', None) is not None:
+                            warnings.warn(
+                                'Token type ids are not supported for PEFT lazy lora with prompt tuning. Ignoring token type ids.'
+                            )
+                            model_kwargs['token_type_ids'] = None
+                # --- the prefix tuning part for Lazy Lora ---
                 if peft_config.prefix_tuning_config is not None:
                     num_virtual_tokens += peft_config.prefix_tuning_config.num_virtual_tokens
                 prefix_attention_mask = torch.ones(
@@ -1007,7 +1021,7 @@ class PeftModelForCausalLM(PeftModel):
             else:
                 if model_kwargs["past_key_values"] is None: # NOTE for prompt tuning
                     inputs_embeds = self.word_embeddings(model_kwargs["input_ids"]) # torch.Size([1, 43, 1024])
-                    prompts = self.get_prompt(batch_size=model_kwargs["input_ids"].shape[0]) # NOTE, torch.Size([1, 8, 1024])
+                    prompts = self.get_prompt(batch_size=model_kwargs["input_ids"].shape[0], in_dtype=inputs_embeds.dtype) # NOTE, torch.Size([1, 8, 1024])
                     if isinstance(prompts, tuple):
                         prompts_in, past_key_values = prompts
                         prompts_in = prompts_in.to(inputs_embeds.dtype)
@@ -1340,7 +1354,7 @@ class PeftModelForTokenClassification(PeftModel):
                 ).long()
             if inputs_embeds is None:
                 inputs_embeds = self.word_embeddings(input_ids)
-            prompts = self.get_prompt(batch_size=batch_size)
+            prompts = self.get_prompt(batch_size=batch_size, in_dtype=inputs_embeds.dtype)
             prompts = prompts.to(inputs_embeds.dtype)
             inputs_embeds = torch.cat((prompts, inputs_embeds), dim=1)
             return self.base_model(inputs_embeds=inputs_embeds, **kwargs)
