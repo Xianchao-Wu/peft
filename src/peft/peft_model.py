@@ -171,7 +171,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                       method (`./my_lora_config_directory/`).
         """
         from .mapping import MODEL_TYPE_TO_PEFT_MODEL_MAPPING, PEFT_TYPE_TO_CONFIG_MAPPING
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         # load the config
         config = PEFT_TYPE_TO_CONFIG_MAPPING[
             PeftConfig.from_pretrained(model_id, subfolder=kwargs.get("subfolder", None)).peft_type
@@ -193,7 +193,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         else:
             model = MODEL_TYPE_TO_PEFT_MODEL_MAPPING[config.task_type](model, config, adapter_name) # NOTE 构造peft model
         model.load_adapter(model_id, adapter_name, **kwargs) # NOTE, model_id='bigscience/bloomz-560m_PREFIX_TUNING_CAUSAL_LM_epoch200', load trained parameter weights
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         return model
 
     def _setup_prompt_encoder(self, adapter_name):
@@ -490,7 +490,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
     def load_adapter(self, model_id, adapter_name, is_trainable=False, **kwargs):
         from .mapping import PEFT_TYPE_TO_CONFIG_MAPPING
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if adapter_name not in self.peft_config:
             # load the config
             peft_config = PEFT_TYPE_TO_CONFIG_MAPPING[
