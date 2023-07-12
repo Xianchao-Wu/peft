@@ -274,7 +274,7 @@ class LazyLoraModel(torch.nn.Module):
         return sum(si).item()
 
     def _find_rank_by_svd(self, key_list, lazy_lora_config, loaded_in_4bit, loaded_in_8bit):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if lazy_lora_config.r_by_module_dict is not None and lazy_lora_config.is_r_reuse:
             return lazy_lora_config.r_by_module_dict
 
@@ -325,13 +325,13 @@ class LazyLoraModel(torch.nn.Module):
 
             for akey in a_key_list:
                 key_to_rank_dict[akey] = round(budget * key_to_rank_dict[akey]/s_value_total)
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         print(key_to_rank_dict)
         lazy_lora_config.r_by_module_dict = key_to_rank_dict
         return key_to_rank_dict
 
     def _find_and_replace(self, adapter_name):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         lazy_lora_config = self.peft_config[adapter_name]
         loaded_in_4bit = getattr(self.model, "is_loaded_in_4bit", False)
         loaded_in_8bit = getattr(self.model, "is_loaded_in_8bit", False)
@@ -411,7 +411,7 @@ class LazyLoraModel(torch.nn.Module):
                             adapter_name, target.in_features, target.out_features, bias=bias, **fourbit_kwargs
                         ) # NOTE case 2
                     elif isinstance(target, torch.nn.Embedding):
-                        import ipdb; ipdb.set_trace()
+                        #import ipdb; ipdb.set_trace()
                         embedding_kwargs = kwargs.copy()
                         embedding_kwargs.pop("fan_in_fan_out", None)
                         in_features, out_features = target.num_embeddings, target.embedding_dim
@@ -526,7 +526,7 @@ class LazyLoraModel(torch.nn.Module):
         This method merges the lazy LoRa layers into the base model. This is needed if someone wants to use the base model
         as a standalone model.
         """
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if getattr(self.config, "model_type", None) == "gpt2":
             raise ValueError("GPT2 models are not supported for merging lazy LORA layers")
 
@@ -708,7 +708,7 @@ class LazyLoraLayer:
         lazy_pre_lora_alpha,
         lazy_pre_adapter_type
     ):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         self.r[adapter_name] = r
         self.lazy_lora_alpha[adapter_name] = lazy_lora_alpha
         self.lazy_pre_lora_alpha[adapter_name] = lazy_pre_lora_alpha
@@ -735,7 +735,7 @@ class LazyLoraLayer:
             self.pre_scaling[adapter_name] = lazy_pre_lora_alpha
         if init_lazy_lora_weights:
             self.reset_lazy_lora_parameters(adapter_name)
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         self.to(self.weight.device) # TODO why 'cpu'?
 
     def reset_lazy_lora_parameters(self, adapter_name):
@@ -791,7 +791,7 @@ class Linear(nn.Linear, LazyLoraLayer):
         self.active_adapter = adapter_name # 'default'
 
     def merge(self):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if self.active_adapter not in self.lazy_lora_A.keys():
             return
         if self.merged:
@@ -808,7 +808,7 @@ class Linear(nn.Linear, LazyLoraLayer):
             self.merged = True
 
     def unmerge(self):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if self.active_adapter not in self.lazy_lora_A.keys():
             return
         if not self.merged:

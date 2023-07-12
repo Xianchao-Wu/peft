@@ -292,7 +292,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         prompt_embeddings = prompt_encoder(prompt_tokens) # NOTE 保存prompt_encoder和prompt_embeddings啥区别？目前prompt tuning上，一样的啊... TODO
         return prompt_embeddings[0].detach().cpu()
 
-    def get_prompt(self, batch_size, in_dtype=torch.float32):
+    def get_prompt(self, batch_size, in_dtype=torch.float32, device=None):
         """
         Returns the virtual prompts to use for Peft. Only applicable when `peft_config.peft_type != PeftType.LORA`.
         """
@@ -327,6 +327,8 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             # --- 2 prefix tuning part ---
             active_adapter = self.active_adapter + '_prefix_tuning'
             prefix_encoder = self.prompt_encoder[active_adapter] if active_adapter in self.prompt_encoder else None
+            if prefix_encoder is not None and device is not None:
+                prefix_encoder.to(device)
             prefix_tokens = (
                 self.prompt_tokens[active_adapter]
                 .unsqueeze(0)
@@ -892,7 +894,11 @@ class PeftModelForCausalLM(PeftModel):
                 # ||| [8,8] 个 -100 ||| [8,20]个-100
                 kwargs["labels"] = torch.cat((prefix_labels, labels), dim=1) 
                 # ||| [8, 72] prefix + labels ||| [8, 84]
-            prompts = self.get_prompt(batch_size=batch_size, in_dtype=inputs_embeds.dtype) # ||| [8, 8, 1024] 8个虚拟的tokens, 0 to 7, 然后用prompt embedding (8, 1024)给embed了一下，就得到最后的张量[8, 8, 1024]
+            prompts = self.get_prompt(
+                batch_size=batch_size, 
+                in_dtype=inputs_embeds.dtype,
+                device=inputs_embeds.device
+            ) # ||| [8, 8, 1024] 8个虚拟的tokens, 0 to 7, 然后用prompt embedding (8, 1024)给embed了一下，就得到最后的张量[8, 8, 1024]
             if isinstance(prompts, tuple):
                 #import ipdb; ipdb.set_trace()
                 # for lazy lora with (1) prompt tuning and (2) prefix tuning

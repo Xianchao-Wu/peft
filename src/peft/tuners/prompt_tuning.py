@@ -124,7 +124,7 @@ class PromptEmbedding(torch.nn.Module):
             # NOTE 这里还是有bug的，因为事先设定的prompt 'Classify if the tweet is a complaint or not:'
             # 经过tokenizer之后，得到的长度为11，但是目前配置文件中，设置的是8.
             # 这种对提示prompt的截取，是有问题的. TODO
-            import ipdb; ipdb.set_trace() # check device of virtual tokens and word_embeddings TODO
+            #import ipdb; ipdb.set_trace() # check device of virtual tokens and word_embeddings TODO
             word_embedding_weights = word_embeddings(torch.LongTensor(init_token_ids)).detach().clone() # [8, 1024]
             word_embedding_weights = word_embedding_weights.to(torch.float32)
             self.embedding.weight = torch.nn.Parameter(word_embedding_weights) # 这个相当于用word_embedding_weights来初始化self.embedding.weight了 NOTE 仍然是可训练的
