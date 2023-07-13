@@ -283,6 +283,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         Returns the prompt embedding to save when saving the model. Only applicable when `peft_config.peft_type !=
         PeftType.LORA`.
         """
+        if adapter_name not in self.prompt_encoder:
+            return None
+
         prompt_encoder = self.prompt_encoder[adapter_name]
         prompt_tokens = (
             self.prompt_tokens[adapter_name].unsqueeze(0).expand(1, -1).to(prompt_encoder.embedding.weight.device)
@@ -888,7 +891,7 @@ class PeftModelForCausalLM(PeftModel):
                 inputs_embeds = self.word_embeddings(input_ids) 
                 # NOTE ||| [8, 64] -> [8, 64, 1024]
             # concat prompt labels
-            if labels is not None:
+            if labels is not None and peft_config.num_virtual_tokens is not None and peft_config.num_virtual_tokens > 0:
                 prefix_labels = torch.full((batch_size, peft_config.num_virtual_tokens), -100).to(labels.device) 
                 #prefix_labels = torch.full((batch_size, num_virtual_tokens), -100).to(labels.device) 
                 # ||| [8,8] 个 -100 ||| [8,20]个-100
@@ -903,8 +906,9 @@ class PeftModelForCausalLM(PeftModel):
                 #import ipdb; ipdb.set_trace()
                 # for lazy lora with (1) prompt tuning and (2) prefix tuning
                 prompts_in, past_key_values = prompts
-                prompts_in = prompts_in.to(inputs_embeds.dtype)
-                inputs_embeds = torch.cat((prompts_in, inputs_embeds), dim=1) 
+                if prompts_in is not None:
+                    prompts_in = prompts_in.to(inputs_embeds.dtype)
+                    inputs_embeds = torch.cat((prompts_in, inputs_embeds), dim=1) 
                 return self.base_model(
                     inputs_embeds=inputs_embeds,
                     past_key_values=past_key_values,
