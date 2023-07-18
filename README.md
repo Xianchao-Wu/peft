@@ -64,7 +64,7 @@ model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
     device_map={"":0}, # gpu0, change this
     cache_dir=cache_dir)
 
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
 
 from peft import (LazyLoraConfig, get_peft_model,
     PrefixTuningConfig, TaskType, PeftType,

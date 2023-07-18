@@ -183,7 +183,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             remove_hook_from_submodules(model)
 
         #import ipdb; ipdb.set_trace()
-        if isinstance(config, PromptLearningConfig) and is_trainable:
+        if not isinstance(config, LazyLoraConfig) and isinstance(config, PromptLearningConfig) and is_trainable:
             raise ValueError("Cannot set a prompt learning adapter to trainable when loading pretrained adapter.")
         else:
             config.inference_mode = not is_trainable

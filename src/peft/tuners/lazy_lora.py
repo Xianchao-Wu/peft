@@ -279,7 +279,7 @@ class LazyLoraModel(torch.nn.Module):
         return sum(si).item()
 
     def _find_rank_by_svd(self, key_list, lazy_lora_config, loaded_in_4bit, loaded_in_8bit):
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         if lazy_lora_config.r_by_module_dict is not None and lazy_lora_config.is_r_reuse:
             return lazy_lora_config.r_by_module_dict
 

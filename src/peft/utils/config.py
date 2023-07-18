@@ -116,19 +116,23 @@ class PeftConfigMixin(PushToHubMixin):
             if hasattr(config, key):
                 if key == 'prompt_tuning_config':
                     # for lazy lora only
+                    #import ipdb; ipdb.set_trace()
                     from ..tuners.prompt_tuning import PromptTuningConfig
-                    temp = PromptTuningConfig()
-                    for k, v in value.items():
-                        if hasattr(temp, k):
-                            setattr(temp, k, v)
+                    temp = PromptTuningConfig() if value is not None else None
+                    if value is not None:
+                        for k, v in value.items():
+                            if hasattr(temp, k):
+                                setattr(temp, k, v)
                     value = temp
                 if key == 'prefix_tuning_config':
                     # for lazy lora only
+                    #import ipdb; ipdb.set_trace()
                     from ..tuners.prefix_tuning import PrefixTuningConfig
-                    temp = PrefixTuningConfig()
-                    for k, v in value.items():
-                        if hasattr(temp, k):
-                            setattr(temp, k, v)
+                    temp = PrefixTuningConfig() if value is not None else None
+                    if value is not None:
+                        for k, v in value.items():
+                            if hasattr(temp, k):
+                                setattr(temp, k, v)
                     value = temp
                 setattr(config, key, value) # NOTE TODO 很多内容，没有导入进来啊... why?
         #import ipdb; ipdb.set_trace()

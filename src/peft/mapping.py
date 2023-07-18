@@ -118,7 +118,7 @@ def get_peft_model(model, peft_config):
         model ([`transformers.PreTrainedModel`]): Model to be wrapped.
         peft_config ([`PeftConfig`]): Configuration object containing the parameters of the Peft model.
     """
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     if isinstance(peft_config, LazyLoraConfig):
         if peft_config.rank_file is not None and len(peft_config.rank_file) > 0:
             with open(peft_config.rank_file, 'r') as afile:
