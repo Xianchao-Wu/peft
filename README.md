@@ -43,8 +43,12 @@ python setup.py install
 
 ### LazyLoRA use case
 ```python
+import sys
+#sys.path.insert(1, '/workspace/asr/peft/src') # use local source code
 import os
-from transformers AutoModelForCausalLM, BitsAndBytesConfig
+import torch
+
+from transformers import AutoModelForCausalLM, BitsAndBytesConfig
 model_name_or_path = 'bigscience/bloomz-560m'
 cache_dir = os.getcwd() # change this
 
@@ -60,7 +64,11 @@ model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
     device_map={"":0}, # gpu0, change this
     cache_dir=cache_dir)
 
-from peft import LazyLoraConfig, get_peft_model, PrefixTuningConfig, TaskType, PeftType, PromptTuningConfig, PromptTuningInit
+import ipdb; ipdb.set_trace()
+
+from peft import (LazyLoraConfig, get_peft_model,
+    PrefixTuningConfig, TaskType, PeftType,
+    PromptTuningConfig, PromptTuningInit)
 
 peft_config_prompt_tuning = PromptTuningConfig(
     task_type=TaskType.CAUSAL_LM,
@@ -77,7 +85,7 @@ peft_config_prefix_tuning = PrefixTuningConfig(
 
 config_lazy_lora = LazyLoraConfig(
     r=8,
-    is_r_by_svd=True,
+    is_r_by_svd=True, # lazy rank determination
     lazy_lora_alpha=32,
     lazy_pre_lora_alpha=0.1,
     lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
@@ -89,6 +97,9 @@ config_lazy_lora = LazyLoraConfig(
     prefix_tuning_config=peft_config_prefix_tuning,
 )
 model = get_peft_model(model, config_lazy_lora)
+model.print_trainable_parameters()
+
+# trainable params: 6607872 || all params: 414827520 || trainable%: 1.592920353982301
 
 ```
 
