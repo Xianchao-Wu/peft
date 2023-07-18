@@ -41,6 +41,7 @@ peft_config_prefix_tuning = PrefixTuningConfig(
 config_lazy_lora = LazyLoraConfig(
     r=8,
     is_r_by_svd=True,
+    rank_file='test_lazylora.2.json',
     lazy_lora_alpha=32,
     lazy_pre_lora_alpha=0.1,
     lazy_pre_adapter_type='linear', #'linear', 'conv1d', 'none'
@@ -52,5 +53,8 @@ config_lazy_lora = LazyLoraConfig(
     prefix_tuning_config=peft_config_prefix_tuning,
 )
 model = get_peft_model(model, config_lazy_lora)
+
+import ipdb; ipdb.set_trace()
+
 model.print_trainable_parameters()
 

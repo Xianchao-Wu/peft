@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+
 from .peft_model import (
     PeftModel,
     PeftModelForCausalLM,
@@ -116,6 +118,12 @@ def get_peft_model(model, peft_config):
         model ([`transformers.PreTrainedModel`]): Model to be wrapped.
         peft_config ([`PeftConfig`]): Configuration object containing the parameters of the Peft model.
     """
+    import ipdb; ipdb.set_trace()
+    if isinstance(peft_config, LazyLoraConfig):
+        if peft_config.rank_file is not None and len(peft_config.rank_file) > 0:
+            with open(peft_config.rank_file, 'r') as afile:
+                peft_config.r_by_module_dict = json.load(afile)
+
     model_config = model.config.to_dict() if hasattr(model.config, "to_dict") else model.config
     peft_config.base_model_name_or_path = model.__dict__.get("name_or_path", None)
     if peft_config.task_type not in MODEL_TYPE_TO_PEFT_MODEL_MAPPING.keys() and not isinstance(

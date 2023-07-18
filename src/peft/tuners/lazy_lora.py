@@ -58,6 +58,7 @@ class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
         lazy_lora_dropout (`float`): The dropout probability for Lazy Lora layers.
         fan_in_fan_out (`bool`): Set this to True if the layer to replace stores weight like (fan_in, fan_out).
         is_r_by_svd (`bool`): Set this to True if use singular value of pretrained weight matrices to dynamically determine rank r, where averaged rank budget is still determined by the given r.
+        rank_file (`str`): exist dynamic rank file for direct loading and time saving.
         r_by_module_dict (`Dict{str:int}`): Dict of module-to-rank for lazy lora.
         is_r_reuse (`bool`): Set this to True if we reuse the ranks given in r_by_module_dict.
         For example, gpt-2 uses `Conv1D` which stores weights like (fan_in, fan_out) and hence this should be set to `True`.:
@@ -90,6 +91,10 @@ class LazyLoraConfig(PromptLearningConfig): #PeftConfig):
     is_r_by_svd: bool = field(
         default=False,
         metadata={"help": "if True, then use singular value to determine rank r and averaged rank budget is still determined by the given r"},
+    )
+    rank_file: str = field(
+        default='',
+        metadata={"help": "Existing rank file in .json format, for rank value reusage and time saving."},
     )
     r_by_module_dict : Optional[dict] = field(
         default=None,
@@ -274,7 +279,7 @@ class LazyLoraModel(torch.nn.Module):
         return sum(si).item()
 
     def _find_rank_by_svd(self, key_list, lazy_lora_config, loaded_in_4bit, loaded_in_8bit):
-        #import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         if lazy_lora_config.r_by_module_dict is not None and lazy_lora_config.is_r_reuse:
             return lazy_lora_config.r_by_module_dict
 
