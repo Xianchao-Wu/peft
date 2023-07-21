@@ -1116,7 +1116,7 @@ if is_bnb_available():
                         x = x.to(previous_dtype_2)
                 #import ipdb; ipdb.set_trace()
                 result = super().forward(x) # why? > /usr/local/lib/python3.8/dist-packages/bitsandbytes/nn/modules.py(207)forward()
-
+                #import ipdb; ipdb.set_trace()
                 if self.disable_adapters or self.active_adapter not in self.lazy_lora_A.keys():
                     return result
                 elif self.r[self.active_adapter] > 0:
